@@ -392,74 +392,359 @@ theorem finalHash_succ_eq_finalHash (n : ℕ) (bs : Fin (2^(n + 1)) → β) :
 
 end BTree
 
+inductive PSharedStack (β : Type u) : Type u
+  | sngl : β → PSharedStack β
+  | bit0 : PSharedStack β → PSharedStack β
+  | bit1 : β → PSharedStack β → PSharedStack β
+deriving DecidableEq
+
+namespace PSharedStack
+variable {β : Type*} {a b : β} {p : PSharedStack β} {n : ℕ}
+
+instance [Inhabited β] : Inhabited (PSharedStack β) where
+  default := sngl default
+
+def toList : PSharedStack β → List (Option β)
+  | sngl a => [some a]
+  | bit0 p => none :: p.toList
+  | bit1 a p => some a :: p.toList
+
+@[simp] theorem toList_sngl : (sngl a).toList = [some a] := rfl
+@[simp] theorem toList_bit0 : (bit0 p).toList = none :: p.toList := rfl
+@[simp] theorem toList_bit1 : (bit1 a p).toList = some a :: p.toList := rfl
+
+@[simp] theorem toList_ne_nil : p.toList ≠ [] := by
+  cases p <;> exact List.noConfusion
+
+instance [Repr β] : Repr (PSharedStack β) where
+  reprPrec := fun p => reprPrec (p.toList)
+
+def size : PSharedStack β → ℕ
+  | sngl _ => 1
+  | bit0 p => p.size.succ
+  | bit1 _ p => p.size.succ
+
+@[simp] theorem size_sngl : (sngl a).size = 1 := rfl
+@[simp] theorem size_bit0 : (bit0 p).size = p.size + 1 := rfl
+@[simp] theorem size_bit1 : (bit1 a p).size = p.size + 1 := rfl
+
+@[simp] theorem size_ne_zero : p.size ≠ 0 := by
+  cases p <;> exact Nat.noConfusion
+
+@[simp] theorem size_pos : 0 < p.size := Nat.pos_of_ne_zero size_ne_zero
+
+@[simp] theorem one_le_size : 1 ≤ p.size := size_pos
+
+@[simp]
+theorem length_toList : (toList p).length = p.size :=
+  p.recOn (fun _ => rfl) (fun _ => congrArg _) (fun _ _ => congrArg _)
+
+def count : PSharedStack β → ℕ
+  | sngl _ => 1
+  | bit0 s => Nat.bit false s.count
+  | bit1 _ s => Nat.bit true s.count
+
+@[simp] theorem count_sngl : (sngl a).count = 1 := rfl
+@[simp] theorem count_bit0 : (bit0 p).count = Nat.bit false p.count := rfl
+@[simp] theorem count_bit1 : (bit1 a p).count = Nat.bit true p.count := rfl
+
+@[simp] theorem count_ne_zero : p.count ≠ 0 :=
+  p.recOn (fun _ => Nat.noConfusion) (fun _ => Nat.bit_ne_zero _) (fun _ _ => Nat.bit_ne_zero _)
+
+@[simp] theorem count_pos : 0 < p.count := Nat.pos_of_ne_zero count_ne_zero
+
+@[simp] theorem one_le_count : 1 ≤ p.count := count_pos
+
+theorem bit0_count_ne_one : (bit0 p).count ≠ 1 := by
+  simp_rw [count_bit0, Nat.bit_false, mul_ne_one]
+  exact Or.inl (Nat.succ_succ_ne_one 0)
+
+theorem bit1_count_ne_one : (bit1 a p).count ≠ 1 := by
+  simp_rw [count_bit1, Nat.bit_true, Nat.succ_ne_succ, mul_ne_zero_iff]
+  exact ⟨two_ne_zero, count_ne_zero⟩
+
+def testBit : PSharedStack β → ℕ → Bool
+  | sngl _, 0 => true
+  | sngl _, (_ + 1) => false
+  | bit0 _, 0 => false
+  | bit0 s, (n + 1) => s.testBit n
+  | bit1 _ _, 0 => true
+  | bit1 _ s, (n + 1) => s.testBit n
+
+@[simp] theorem testBit_sngl_zero : (sngl a).testBit 0 = true := rfl
+@[simp] theorem testBit_sngl_succ : (sngl a).testBit (n + 1) = false := rfl
+
+@[simp] theorem testBit_sngl : (sngl a).testBit n = decide (n = 0) :=
+  n.casesOn testBit_sngl_zero (fun _ => testBit_sngl_succ)
+
+@[simp] theorem testBit_bit0_zero : (bit0 p).testBit 0 = false := rfl
+@[simp] theorem testBit_bit0_succ : (bit0 p).testBit (n + 1) = p.testBit n := rfl
+@[simp] theorem testBit_bit1_zero : (bit1 a p).testBit 0 = true := rfl
+@[simp] theorem testBit_bit1_succ : (bit1 a p).testBit (n + 1) = p.testBit n := rfl
+
+theorem testBit_of_ge : p.size ≤ n → p.testBit n = false := by
+  · induction p generalizing n with | sngl => _ | bit0 _ IH => _ | bit1 _ _ IH => _ <;> cases n <;>
+    try {exact fun h => (size_ne_zero (Nat.eq_zero_of_le_zero h)).elim} <;>
+    try {exact fun h => IH (Nat.le_of_succ_le_succ h)}
+    exact fun _ => rfl
+
+@[simp]
+theorem testBit_count : p.count.testBit n = p.testBit n := by
+  induction p generalizing n with | sngl => _ | bit0 _ IH => _ | bit1 _ _ IH => _ <;>
+  [rw [count_sngl]; rw [count_bit0]; rw [count_bit1]] <;> cases n
+  · simp_rw [Nat.testBit_one_zero, testBit_sngl_zero]
+  · simp_rw [testBit_sngl_succ, Nat.testBit_succ,
+      Nat.div_eq_of_lt (one_lt_two), Nat.zero_testBit]
+  · simp_rw [testBit_bit0_zero, Nat.testBit_bit_zero]
+  · simp_rw [testBit_bit0_succ, Nat.testBit_bit_succ]
+    exact IH
+  · simp_rw [testBit_bit1_zero, Nat.testBit_bit_zero]
+  · simp_rw [testBit_bit1_succ, Nat.testBit_bit_succ]
+    exact IH
+
+def last : PSharedStack β → β
+  | sngl a => a
+  | bit0 p => p.last
+  | bit1 _ p => p.last
+
+@[simp] theorem last_sngl : (sngl a).last = a := rfl
+@[simp] theorem last_bit0 : (bit0 p).last = p.last := rfl
+@[simp] theorem last_bit1 : (bit1 a p).last = p.last := rfl
+
+def pop : PSharedStack β → β
+  | sngl a => a
+  | bit0 p => p.pop
+  | bit1 a _ => a
+
+@[simp] theorem pop_sngl : (sngl a).pop = a := rfl
+@[simp] theorem pop_bit0 : (bit0 p).pop = p.pop := rfl
+@[simp] theorem pop_bit1 : (bit1 a p).pop = a := rfl
+
+inductive isSingle : PSharedStack β → Prop
+  | sngl : {a : β} → isSingle (sngl a)
+
+attribute [simp] isSingle.sngl
+
+@[simp] theorem isSingle.not_bit0 : ¬ (bit0 p).isSingle := fun h => by contradiction
+
+@[simp] theorem isSingle.not_bit1 : ¬ (bit1 a p).isSingle := fun h => by contradiction
+
+theorem isSingle_iff_count_eq_one : p.isSingle ↔ p.count = 1 := by
+  cases p
+  · exact iff_of_true isSingle.sngl count_sngl
+  · exact iff_of_false isSingle.not_bit0 bit0_count_ne_one
+  · exact iff_of_false isSingle.not_bit1 bit1_count_ne_one
+
+inductive isRoot : PSharedStack β → Prop
+  | sngl : (a : β) → isRoot (sngl a)
+  | bit0_of : (p : PSharedStack β) → p.isRoot → isRoot (bit0 p)
+
+@[simp] theorem isRoot_sngl : (sngl a).isRoot := by constructor
+
+@[simp] theorem not_isRoot_bit1 : ¬ (bit1 a p).isRoot := fun h => by contradiction
+
+@[simp] theorem isRoot_bit0_iff : (bit0 p).isRoot ↔ p.isRoot :=
+  ⟨fun h => by cases h ; assumption, fun h => by constructor ; assumption⟩
+
+theorem count_eq_two_pow_size_of_isRoot (h : p.isRoot) : p.count = 2^(p.size - 1) := by
+  apply Nat.eq_of_testBit_eq
+  simp_rw [testBit_count, Nat.testBit_two_pow]
+  induction h with | sngl a => _ | bit0_of p hp IH => _
+  · simp_rw [testBit_sngl, size_sngl, Nat.sub_self, decide_eq_decide, eq_comm, implies_true]
+  · rintro (_ | i)
+    · simp_rw [testBit_bit0_zero, size_bit0, Nat.add_sub_cancel, size_ne_zero, decide_False]
+    · simp_rw [testBit_bit0_succ, size_bit0, Nat.add_sub_cancel, IH, decide_eq_decide,
+      Nat.sub_eq_iff_eq_add one_le_size]
+
+theorem isRoot_of_count_eq_two_pow_size (h : p.count = 2^(p.size - 1)) : p.isRoot := by
+  induction p with | sngl a => _ | bit0 p IH => _ | bit1 a p IH => _
+  · exact isRoot_sngl
+  · simp_rw [isRoot_bit0_iff]
+    apply IH
+    rw [← Nat.pow_div one_le_size zero_lt_two, pow_one]
+    exact Nat.eq_div_of_mul_eq_right (two_ne_zero) h
+  · have H := congrArg (· % 2) h
+    simp_rw [count_bit1, size_bit1, Nat.add_sub_cancel, Nat.bit_true, Nat.mul_add_mod,
+      Nat.one_mod, eq_comm (a := 1), Nat.two_pow_mod_two_eq_one, size_ne_zero] at H
+
+theorem isRoot_iff_count_eq_two_pow_size : p.isRoot ↔ p.count = 2^(p.size - 1) :=
+  ⟨count_eq_two_pow_size_of_isRoot, isRoot_of_count_eq_two_pow_size⟩
+
+inductive isMaxed : PSharedStack β → Prop
+  | sngl : (a : β) → isMaxed (sngl a)
+  | bit1_of : (a : β) → (p : PSharedStack β) → p.isMaxed → isMaxed (bit1 a p)
+
+@[simp] theorem isMaxed_sngl : (sngl a).isMaxed := by constructor
+
+@[simp] theorem not_isMaxed_bit0 : ¬ (bit0 p).isMaxed:= fun h => by contradiction
+
+@[simp] theorem isMaxed_bit1_iff : (bit1 a p).isMaxed ↔ p.isMaxed :=
+  ⟨fun h => by cases h ; assumption, fun h => by constructor ; assumption⟩
+
+theorem count_eq_two_pow_size_sub_one_of_isMaxed (h : p.isMaxed) : p.count = 2^p.size - 1 := by
+  apply Nat.eq_of_testBit_eq
+  simp_rw [testBit_count, Nat.testBit_two_pow_sub_one]
+  induction h with | sngl a => _ | bit1_of a p hp IH => _
+  · simp_rw [testBit_sngl, size_sngl, Nat.lt_one_iff, implies_true]
+  · rintro (_ | i)
+    · simp_rw [testBit_bit1_zero, size_bit1, Nat.zero_lt_succ, decide_True]
+    · simp_rw [testBit_bit1_succ, size_bit1, Nat.succ_lt_succ_iff, IH]
+
+theorem isMaxed_of_count_eq_two_pow_size_sub_one (h : p.count = 2^p.size - 1) : p.isMaxed := by
+  induction p with | sngl a => _ | bit0 p IH => _ | bit1 a p IH => _
+  · exact isMaxed_sngl
+  · sorry
+  · simp_rw [isMaxed_bit1_iff]
+    apply IH
+    simp at h
+    rw [← Nat.pow_div one_le_size zero_lt_two, pow_one]
+    exact Nat.eq_div_of_mul_eq_right (two_ne_zero) h
+  · have H := congrArg (· % 2) h
+    simp_rw [count_bit1, size_bit1, Nat.add_sub_cancel, Nat.bit_true, Nat.mul_add_mod,
+      Nat.one_mod, eq_comm (a := 1), Nat.two_pow_mod_two_eq_one, size_ne_zero] at H
+
+theorem isRoot_iff_count_eq_two_pow_size : p.isRoot ↔ p.count = 2^(p.size - 1) :=
+  ⟨count_eq_two_pow_size_of_isRoot, isRoot_of_count_eq_two_pow_size⟩
+
+theorem isSingle_iff_isMaxed_and_isRoot : p.isSingle ↔ (p.isMaxed ∧ p.isRoot) := by
+  cases p
+  · exact iff_of_true isSingle.sngl ⟨isMaxed_sngl, isRoot_sngl⟩
+  · exact iff_of_false isSingle.not_bit0 (fun h => not_isMaxed_bit0 h.1)
+  · exact iff_of_false isSingle.not_bit1 (fun h => not_isRoot_bit1 h.2)
+
+section variable [Hash β]
+
+def push : PSharedStack β → β → PSharedStack β
+  | sngl a, b => bit0 (sngl (a # b))
+  | bit0 p, b => bit1 b p
+  | bit1 a p, b => bit0 (p.push (a # b))
+
+@[simp] theorem push_sngl : (sngl a).push b = bit0 (sngl (a # b)) := rfl
+@[simp] theorem push_bit0 : (bit0 p).push b = bit1 b p := rfl
+@[simp] theorem push_bit1 : (bit1 a p).push b = bit0 (p.push (a # b)) := rfl
+
+@[simp] theorem push_ne_sngl : p.push b ≠ sngl a := by
+  cases p <;> exact PSharedStack.noConfusion
+
+@[simp]
+theorem count_push : (p.push b).count = p.count.succ := by
+  induction p generalizing b with | sngl => rfl | bit0 => rfl | bit1 _ _ IH => exact congrArg _ IH
+
+end
+
+
+end PSharedStack
+
 inductive SharedStack (β : Type u) : Type u
-  | sngl : β → SharedStack β
-  | bit0 : SharedStack β → SharedStack β
-  | bit1 : β → SharedStack β → SharedStack β
+  | emp : SharedStack β
+  | pst : PSharedStack β → SharedStack β
 deriving DecidableEq
 
 namespace SharedStack
 
-variable {n m : ℕ} {β : Type*} {b : β} {s : SharedStack β}
+open PSharedStack
 
-def size : SharedStack β → ℕ
-  | sngl _ => 1
-  | bit0 s => s.size + 1
-  | bit1 _ s => s.size + 1
+variable {β : Type*} {a b : β} {p : PSharedStack β} {s : SharedStack β}
 
-def toListOption : SharedStack β → List (Option β)
-  | sngl b => [some b]
-  | bit0 s => none :: toListOption s
-  | bit1 b s => some b :: toListOption s
+instance : Inhabited (SharedStack β) where
+  default := emp
+
+def toList (s : SharedStack β) : List (Option β) := s.casesOn [] PSharedStack.toList
+
+@[simp] theorem toList_emp : (emp : SharedStack β).toList = [] := rfl
+@[simp] theorem toList_pst : (pst p).toList = p.toList := rfl
+
+@[simp] theorem toList_eq_nil : s.toList = [] ↔ s = emp :=
+  s.casesOn (iff_of_true rfl rfl) (fun p => iff_of_false p.toList_ne_nil SharedStack.noConfusion)
+
+def size (s : SharedStack β) : ℕ := s.casesOn 0 PSharedStack.size
+
+@[simp] theorem size_emp : (emp : SharedStack β).size = 0 := rfl
+@[simp] theorem size_pst : (pst p).size = p.size := rfl
+
+@[simp] theorem size_eq_zero : s.size = 0 ↔ s = emp :=
+  s.casesOn (iff_of_true rfl rfl) (fun p => iff_of_false p.size_ne_zero SharedStack.noConfusion)
+
+@[simp] theorem size_pos : 0 < s.size ↔ ∃ p, s = pst p :=
+  s.casesOn
+    (iff_of_false (lt_irrefl _) (fun ⟨_, h⟩ => SharedStack.noConfusion h))
+    (fun p => iff_of_true p.size_pos ⟨p, rfl⟩)
 
 @[simp]
-theorem toListOption_sngl : toListOption (sngl b) = ([some b] : List (Option β)) := rfl
-
-@[simp]
-theorem toListOption_bit0 : toListOption (bit0 s) = none :: toListOption s := rfl
-
-@[simp]
-theorem toListOption_bit1 : toListOption (bit1 b s) = some b :: toListOption s := rfl
-
-@[simp]
-theorem length_toListOption : {s : SharedStack β} → (toListOption s).length = s.size
-  | sngl _ => rfl
-  | bit0 _ => congrArg _ length_toListOption
-  | bit1 _ _ => congrArg _ length_toListOption
-
-theorem length_toListOption_ne_zero {s : SharedStack β} : (toListOption s).length ≠ 0 :=
-  length_toListOption ▸ Nat.noConfusion
-
-theorem toListOption_ne_nil {s : SharedStack β} : toListOption s ≠ [] := by
-  cases s <;> exact List.noConfusion
+theorem length_toList : (toList s).length = s.size := s.recOn rfl fun p => p.length_toList
 
 instance [Repr β] : Repr (SharedStack β) where
-  reprPrec := fun s => reprPrec (s.toListOption)
+  reprPrec := fun s => reprPrec (s.toList)
 
-instance  [Inhabited β] : Inhabited (SharedStack β) where
-  default := sngl default
+def count (s : SharedStack β) : ℕ := s.casesOn 0 PSharedStack.count
 
-def stackToNat (s : SharedStack β) : ℕ := match s with
-  | sngl _ => 1
-  | bit0 s => Nat.bit false (stackToNat s)
-  | bit1 _ s => Nat.bit true (stackToNat s)
+@[simp] theorem count_emp : (emp : SharedStack β).count = 0 := rfl
+@[simp] theorem count_pst : (pst p).count = p.count := rfl
+
+@[simp] theorem count_eq_zero : s.count = 0 ↔ s = emp :=
+  s.casesOn (iff_of_true rfl rfl) (fun p => iff_of_false p.count_ne_zero SharedStack.noConfusion)
+
+@[simp] theorem count_pos : 0 < s.count ↔ ∃ p, s = pst p :=
+  s.casesOn
+    (iff_of_false (lt_irrefl _) (fun ⟨_, h⟩ => SharedStack.noConfusion h))
+    (fun p => iff_of_true p.count_pos ⟨p, rfl⟩)
+
+def last? (s : SharedStack β) : Option β := s.casesOn none (fun p => some (p.last))
+
+@[simp] theorem last?_emp : (emp : SharedStack β).last? = none := rfl
+@[simp] theorem last?_pst : (pst p).last? = some p.last := rfl
+
+def last (s : SharedStack β) (hs : s.count ≠ 0) : β := match s with
+  | emp => ((hs count_emp).elim)
+  | pst p => p.last
+
+@[simp] theorem last_pst {hs : (pst p).count ≠ 0} : (pst p).last hs = p.last := rfl
+
+def pop? (s : SharedStack β) : Option β := s.casesOn none (fun p => some (p.pop))
+
+@[simp] theorem pop?_emp : (emp : SharedStack β).pop? = none := rfl
+@[simp] theorem pop?_pst : (pst p).pop? = some p.pop := rfl
+
+def pop (s : SharedStack β) (hs : s.count ≠ 0) : β := match s with
+  | emp => ((hs count_emp).elim)
+  | pst p => p.pop
+
+@[simp] theorem pop_pst {hs : (pst p).count ≠ 0} : (pst p).pop hs = p.pop := rfl
+
+def testBit (s : SharedStack β) (n : ℕ) : Bool := s.casesOn false (fun p => p.testBit n)
+
+@[simp] theorem testBit_emp : (emp : SharedStack β).testBit n = false := rfl
+@[simp] theorem testBit_pst : (pst p).testBit n = p.testBit n := rfl
+
+theorem testBit_of_ge : s.size ≤ n → s.testBit n = false :=
+  s.casesOn (fun _ => rfl) (fun p => p.testBit_of_ge)
+
+theorem testBit_count : s.count.testBit n = s.testBit n :=
+  s.casesOn (Nat.zero_testBit _) (fun p => p.testBit_count)
+
+section variable [Hash β]
+
+def push (s : SharedStack β) : β → SharedStack β :=
+  s.casesOn (fun a => pst (sngl a)) (fun p b => pst (p.push b))
+
+@[simp] theorem push_emp : (emp : SharedStack β).push a = pst (sngl a) := rfl
+@[simp] theorem push_pst : (pst p).push b = pst (p.push b) := rfl
+
+@[simp] theorem push_ne_emp : s.push b ≠ emp := by
+  cases s <;> exact SharedStack.noConfusion
 
 @[simp]
-theorem stackToNat_sngl : stackToNat (sngl b : SharedStack β) = 1 := rfl
+theorem count_push : (s.push b).count = s.count.succ := s.casesOn rfl (fun p => p.count_push)
 
-@[simp]
-theorem stackToNat_bit0 : stackToNat (bit0 s) = Nat.bit false s.stackToNat := rfl
+end
 
-@[simp]
-theorem stackToNat_bit1 : stackToNat (bit1 b s) = Nat.bit true s.stackToNat := rfl
+theorem length_toList_ne_zero {s : SharedStack β} : (toList s).length ≠ 0 :=
+  length_toList ▸ Nat.noConfusion
 
+theorem toList_ne_nil {s : SharedStack β} : toList s ≠ [] := by
+  cases s <;> exact List.noConfusion
 
-def addToStack [Hash β]  (s : SharedStack β) (b : β) : SharedStack β := match s with
-  | sngl a => bit0 (sngl (a # b))
-  | bit0 s => bit1 b s
-  | bit1 a s => bit0 (addToStack s (a # b))
-
-instance : Hash ℕ := ⟨fun a b => (hash (a, b)).toNat⟩
+instance : Hash ℕ := ⟨fun a b => (hash (a, b)).count⟩
 
 #eval (bit0 (sngl 5324))
 
@@ -475,118 +760,179 @@ instance : Hash ℕ := ⟨fun a b => (hash (a, b)).toNat⟩
 
 #eval BTree.finalHash 2 ![234234, 12, 44, 5324]
 
-@[simp]
-theorem addToStack_nil [Hash β] (b : β) : addToStack [] b = [some b] := rfl
-
-@[simp]
-theorem addToStack_none_cons [Hash β] (s : SharedStack β) (b : β) :
-    addToStack (none :: s) b = some b :: s := rfl
-
-@[simp]
-theorem addToStack_some_cons [Hash β] (s : SharedStack β) (b : β) :
-    addToStack (some a :: s) b = none :: addToStack s (a # b) := rfl
-
-theorem stackToNat_eq_zero_iff_all_none (s : SharedStack β) :
-    s.stackToNat = 0 ↔ s = List.replicate (s.length) none := by
-  induction' s with a s IH
-  · simp_rw [stackToNat_nil, List.length_nil, List.replicate_zero]
+theorem length_addToStack [Hash β] (s : SharedStack β) (b : β) :
+    (addToStack s b).length = s.length := by
+  induction' s with a s IH generalizing b
+  · rw [addToStack_nil]
   · cases' a
-    · simp_rw [stackToNat_none_cons, mul_eq_zero, two_ne_zero, false_or,
+    · simp_rw [addToStack_none_cons, List.length_cons]
+    · simp_rw [addToStack_some_cons, List.length_cons, add_left_inj, IH]
+
+theorem mem_addToStack_eq_none_iff_mem_isSome [Hash β] (s : SharedStack β) (b : β) :
+    (∀ a ∈ s.addToStack b, a = none) ↔ ∀ a ∈ s, a.isSome := by
+  induction' s with a s IH generalizing b
+  · simp_rw [addToStack_nil, List.not_mem_nil, false_implies]
+  · cases' a
+    · simp_rw [addToStack_none_cons, List.mem_cons, forall_eq_or_imp, Option.some_ne_none,
+        Option.isSome_none, Bool.false_eq_true, false_and]
+    · simp_rw [addToStack_some_cons, List.mem_cons, forall_eq_or_imp, Option.isSome_some, IH]
+
+theorem mem_addToStack_eq_none_iff_mem_isSome' [Hash β] (s : SharedStack β) (b : β) :
+    (∃ a ∈ s.addToStack b, a.isSome) ↔ ∃ a ∈ s, a = none := not_iff_not.mp <| by
+  simp_rw [not_exists, not_and, Bool.not_eq_true, ← Bool.not_eq_true,
+    Option.not_isSome_iff_eq_none, mem_addToStack_eq_none_iff_mem_isSome, ← Bool.not_eq_false,
+    Option.not_isSome, Option.isNone_iff_eq_none]
+
+
+def addListToStack [Hash β] : SharedStack β → List β → SharedStack β :=
+  list.foldl addToStack (List.replicate (n + 1) none)
+
+def stackcount (s : SharedStack β) : ℕ :=
+  match s with
+  | [] => 0
+  | (a :: s) => Nat.bit a.isSome (stackcount s)
+
+@[simp]
+theorem stackcount_nil : stackcount ([] : SharedStack β) = 0 := rfl
+
+theorem stackcount_cons (s : SharedStack β) :
+    stackcount (a :: s) = Nat.bit a.isSome s.stackcount := rfl
+
+@[simp]
+theorem stackcount_some_cons (s : SharedStack β) :
+    stackcount (some a :: s) = 2 * s.stackcount + 1 := rfl
+
+@[simp]
+theorem stackcount_none_cons (s : SharedStack β) :
+    stackcount (none :: s) = 2 * s.stackcount := rfl
+
+@[simp]
+theorem testBit_stackcount {s : SharedStack β} {i : ℕ} :
+    s.stackcount.testBit i = if h : i < s.length then s[i].isSome else false := by
+  induction' s with a s IH generalizing i
+  · simp_rw [stackcount_nil, Nat.zero_testBit, List.length_nil, not_lt_zero', dite_false]
+  · simp_rw [List.length_cons, stackcount_cons]
+    cases' i
+    · simp_rw [Nat.testBit_bit_zero, Nat.zero_lt_succ, dite_true, List.getElem_cons_zero]
+    · simp_rw [Nat.testBit_bit_succ, Nat.succ_lt_succ_iff, List.getElem_cons_succ, IH]
+
+theorem testBit_fin_length {s : SharedStack β} {i : Fin (s.length)} :
+    s.stackcount.testBit i = s[(i : ℕ)].isSome := by simp_rw [testBit_stackcount, i.isLt, dite_true]
+
+theorem finArrowBoolToNat_isSome_get_eq_stackcount (s : SharedStack β) :
+    Fin.finArrowBoolToNat (fun i => Option.isSome <| s[(i : ℕ)]) = s.stackcount :=
+  Nat.eq_of_testBit_eq (fun _ => Fin.testBit_finArrowBoolToNat.trans testBit_stackcount.symm)
+
+theorem stackcount_addToStack_of_none_mem [Hash β] (s : SharedStack β) (hs : none ∈ s) (b : β) :
+    stackcount (addToStack s b) = s.stackcount + 1 := by
+  induction' s with a s IH generalizing b
+  · simp at hs
+  · cases' a
+    · simp_rw [addToStack_none_cons, stackcount_some_cons, stackcount_none_cons]
+    · simp at hs
+      simp_rw [addToStack_some_cons, stackcount_none_cons, stackcount_some_cons, IH hs, mul_add]
+
+theorem stackcount_eq_zero_iff_all_none (s : SharedStack β) :
+    s.stackcount = 0 ↔ s = List.replicate (s.length) none := by
+  induction' s with a s IH
+  · simp_rw [stackcount_nil, List.length_nil, List.replicate_zero]
+  · cases' a
+    · simp_rw [stackcount_none_cons, mul_eq_zero, two_ne_zero, false_or,
         List.length_cons, List.replicate_succ, List.cons_eq_cons, true_and, IH]
-    · simp_rw [stackToNat_some_cons, Nat.add_eq_zero_iff, mul_eq_zero, one_ne_zero, and_false,
+    · simp_rw [stackcount_some_cons, Nat.add_eq_zero_iff, mul_eq_zero, one_ne_zero, and_false,
         false_iff, List.length_cons, List.replicate_succ, List.cons_eq_cons, Option.some_ne_none,
         not_and, false_implies]
 
-theorem stackToNat_pos_iff_exists_some (s : SharedStack β) :
-    0 < s.stackToNat ↔ ∃ a ∈ s, a.isSome := by
-  simp_rw [Nat.pos_iff_ne_zero, not_iff_comm (a := s.stackToNat = 0),
-    stackToNat_eq_zero_iff_all_none, not_exists, not_and, Bool.not_eq_true, Option.not_isSome,
+theorem stackcount_pos_iff_exists_some (s : SharedStack β) :
+    0 < s.stackcount ↔ ∃ a ∈ s, a.isSome := by
+  simp_rw [Nat.pos_iff_ne_zero, not_iff_comm (a := s.stackcount = 0),
+    stackcount_eq_zero_iff_all_none, not_exists, not_and, Bool.not_eq_true, Option.not_isSome,
     Option.isNone_iff_eq_none, List.eq_replicate_iff, true_and]
 
-theorem stackToNat_lt_two_pow (s : SharedStack β) :
-    s.stackToNat < 2^(s.length) := by
+theorem stackcount_lt_two_pow (s : SharedStack β) :
+    s.stackcount < 2^(s.length) := by
   induction' s with a s IH
-  · simp_rw [stackToNat_nil, List.length_nil, pow_zero, zero_lt_one]
+  · simp_rw [stackcount_nil, List.length_nil, pow_zero, zero_lt_one]
   · cases' a
-    · simp_rw [stackToNat_none_cons, List.length_cons, pow_succ']
+    · simp_rw [stackcount_none_cons, List.length_cons, pow_succ']
       exact Nat.bit_lt_bit false false IH
-    · simp_rw [stackToNat_some_cons, List.length_cons, pow_succ']
+    · simp_rw [stackcount_some_cons, List.length_cons, pow_succ']
       exact Nat.bit_lt_bit true false IH
 
-theorem stackToNat_le_two_pow_sub_one (s : SharedStack β) :
-    s.stackToNat ≤ 2^(s.length) - 1 := by
+theorem stackcount_le_two_pow_sub_one (s : SharedStack β) :
+    s.stackcount ≤ 2^(s.length) - 1 := by
   rw [Nat.le_sub_one_iff_lt (Nat.two_pow_pos _)]
-  exact s.stackToNat_lt_two_pow
+  exact s.stackcount_lt_two_pow
 
-theorem stackToNat_lt_two_pow_pred_iff_none_mem (s : SharedStack β) :
-    s.stackToNat < 2^(s.length) - 1 ↔ none ∈ s := by
+theorem stackcount_lt_two_pow_pred_iff_none_mem (s : SharedStack β) :
+    s.stackcount < 2^(s.length) - 1 ↔ none ∈ s := by
   simp_rw [Nat.sub_one, Nat.lt_pred_iff]
   induction' s with a s IH
-  · simp_rw [stackToNat_nil, Nat.succ_eq_add_one, zero_add, List.length_nil, pow_zero,
+  · simp_rw [stackcount_nil, Nat.succ_eq_add_one, zero_add, List.length_nil, pow_zero,
       lt_self_iff_false, List.not_mem_nil]
   · cases' a
-    · simp_rw [stackToNat_none_cons, Nat.succ_eq_add_one, List.length_cons, List.mem_cons,
+    · simp_rw [stackcount_none_cons, Nat.succ_eq_add_one, List.length_cons, List.mem_cons,
         true_or, iff_true, pow_succ',
         ← (Nat.ne_of_odd_add ((odd_two_mul_add_one _).add_even (even_two_mul _))).le_iff_lt,
-        Nat.add_one_le_iff, Nat.mul_lt_mul_left (zero_lt_two), stackToNat_lt_two_pow]
-    · simp_rw [stackToNat_some_cons, Nat.succ_eq_add_one, List.length_cons, List.mem_cons,
+        Nat.add_one_le_iff, Nat.mul_lt_mul_left (zero_lt_two), stackcount_lt_two_pow]
+    · simp_rw [stackcount_some_cons, Nat.succ_eq_add_one, List.length_cons, List.mem_cons,
         fun x => (Option.some_ne_none x).symm, false_or, add_assoc, ← two_mul, ← mul_add,
         pow_succ', Nat.mul_lt_mul_left (zero_lt_two), IH]
 
-theorem stackToNat_eq_two_pos_pred_iff_forall_mem_isSome (s : SharedStack β) :
-    s.stackToNat = 2^(s.length) - 1 ↔ ∀ a ∈ s, a.isSome := Decidable.not_iff_not.mp <| by
+theorem stackcount_eq_two_pos_pred_iff_forall_mem_isSome (s : SharedStack β) :
+    s.stackcount = 2^(s.length) - 1 ↔ ∀ a ∈ s, a.isSome := Decidable.not_iff_not.mp <| by
   simp_rw [not_forall, exists_prop, Bool.not_eq_true, Option.not_isSome,
-    Option.isNone_iff_eq_none, exists_eq_right, ← stackToNat_lt_two_pow_pred_iff_none_mem,
-    s.stackToNat_le_two_pow_sub_one.lt_iff_ne]
+    Option.isNone_iff_eq_none, exists_eq_right, ← stackcount_lt_two_pow_pred_iff_none_mem,
+    s.stackcount_le_two_pow_sub_one.lt_iff_ne]
 
-theorem testBit_stackToNat_ge {s : SharedStack β} {i : ℕ} (hi : s.length ≤ i) :
-    s.stackToNat.testBit i = false := Nat.testBit_eq_false_of_lt <|
-      s.stackToNat_lt_two_pow.trans_le (Nat.pow_le_pow_of_le_right zero_lt_two hi)
+theorem testBit_stackcount_ge {s : SharedStack β} {i : ℕ} (hi : s.length ≤ i) :
+    s.stackcount.testBit i = false := Nat.testBit_eq_false_of_lt <|
+      s.stackcount_lt_two_pow.trans_le (Nat.pow_le_pow_of_le_right zero_lt_two hi)
 
-theorem testBit_stackToNat_lt {s : SharedStack β} {i : ℕ} (hi : i < s.length) :
-    s.stackToNat.testBit i = s[i].isSome := by
+theorem testBit_stackcount_lt {s : SharedStack β} {i : ℕ} (hi : i < s.length) :
+    s.stackcount.testBit i = s[i].isSome := by
   induction' s with a s IH generalizing i
   · simp_rw [List.length_nil, not_lt_zero'] at hi
   · rw [List.length_cons] at hi
-    simp_rw [stackToNat_cons]
+    simp_rw [stackcount_cons]
     cases' i
     · simp_rw [Nat.testBit_bit_zero, List.getElem_cons_zero]
     · simp_rw [Nat.testBit_bit_succ, List.getElem_cons_succ]
       exact IH _
 
 @[simp]
-theorem testBit_stackToNat {s : SharedStack β} {i : ℕ} :
-    s.stackToNat.testBit i = if h : i < s.length then s[i].isSome else false := by
+theorem testBit_stackcount {s : SharedStack β} {i : ℕ} :
+    s.stackcount.testBit i = if h : i < s.length then s[i].isSome else false := by
   split_ifs with hi
-  · exact testBit_stackToNat_lt hi
-  · exact testBit_stackToNat_ge (le_of_not_lt hi)
+  · exact testBit_stackcount_lt hi
+  · exact testBit_stackcount_ge (le_of_not_lt hi)
 
 theorem testBit_fin_length {s : SharedStack β} {i : Fin (s.length)} :
-    s.stackToNat.testBit i = s[(i : ℕ)].isSome := by simp_rw [testBit_stackToNat, i.isLt, dite_true]
+    s.stackcount.testBit i = s[(i : ℕ)].isSome := by simp_rw [testBit_stackcount, i.isLt, dite_true]
 
-theorem finArrowBoolToNat_isSome_get_eq_stackToNat (s : SharedStack β) :
-    Fin.finArrowBoolToNat (fun i => Option.isSome <| s[(i : ℕ)]) = s.stackToNat :=
-  Nat.eq_of_testBit_eq (fun _ => Fin.testBit_finArrowBoolToNat.trans testBit_stackToNat.symm)
+theorem finArrowBoolToNat_isSome_get_eq_stackcount (s : SharedStack β) :
+    Fin.finArrowBoolToNat (fun i => Option.isSome <| s[(i : ℕ)]) = s.stackcount :=
+  Nat.eq_of_testBit_eq (fun _ => Fin.testBit_finArrowBoolToNat.trans testBit_stackcount.symm)
 
-theorem lt_length_of_stackToNat_eq_two_pow [Hash β] {s : SharedStack β} {i : ℕ}
-    (hs : s.stackToNat = 2^i) : i < s.length := by
+theorem lt_length_of_stackcount_eq_two_pow [Hash β] {s : SharedStack β} {i : ℕ}
+    (hs : s.stackcount = 2^i) : i < s.length := by
   rw [← Nat.pow_lt_pow_iff_right one_lt_two, ← hs]
-  exact s.stackToNat_lt_two_pow
+  exact s.stackcount_lt_two_pow
 
-theorem getElem_isSome_eq_decide_of_stackToNat_eq_two_pow [Hash β] {s : SharedStack β} {i k : ℕ}
-    (hs : s.stackToNat = 2^i) (hk : k < s.length) : s[k].isSome = decide (i = k) := by
+theorem getElem_isSome_eq_decide_of_stackcount_eq_two_pow [Hash β] {s : SharedStack β} {i k : ℕ}
+    (hs : s.stackcount = 2^i) (hk : k < s.length) : s[k].isSome = decide (i = k) := by
   have hs := congrArg (Nat.testBit · k) hs
-  simp_rw [testBit_stackToNat, Nat.testBit_two_pow, dif_pos hk] at hs
+  simp_rw [testBit_stackcount, Nat.testBit_two_pow, dif_pos hk] at hs
   exact hs
 
-theorem getElem_isSome_of_stackToNat_eq_two_pow [Hash β] {s : SharedStack β} {i : ℕ}
-    (hs : s.stackToNat = 2^i) : (s[i]'(lt_length_of_stackToNat_eq_two_pow hs)).isSome := by
-  simp_rw [getElem_isSome_eq_decide_of_stackToNat_eq_two_pow hs, decide_True]
+theorem getElem_isSome_of_stackcount_eq_two_pow [Hash β] {s : SharedStack β} {i : ℕ}
+    (hs : s.stackcount = 2^i) : (s[i]'(lt_length_of_stackcount_eq_two_pow hs)).isSome := by
+  simp_rw [getElem_isSome_eq_decide_of_stackcount_eq_two_pow hs, decide_True]
 
-theorem getElem_eq_none_of_ne_of_stackToNat_eq_two_pow [Hash β] {s : SharedStack β} {i k : ℕ}
-    (hs : s.stackToNat = 2^i) (hk : k < s.length) (hk' : i ≠ k) : s[k] = none := by
+theorem getElem_eq_none_of_ne_of_stackcount_eq_two_pow [Hash β] {s : SharedStack β} {i k : ℕ}
+    (hs : s.stackcount = 2^i) (hk : k < s.length) (hk' : i ≠ k) : s[k] = none := by
   simp_rw [← Option.not_isSome_iff_eq_none,
-    getElem_isSome_eq_decide_of_stackToNat_eq_two_pow hs, hk', decide_False,
+    getElem_isSome_eq_decide_of_stackcount_eq_two_pow hs, hk', decide_False,
     Bool.false_eq_true, not_false_eq_true]
 
 
@@ -635,17 +981,17 @@ theorem length_addToStack_of_not_mem_none [Hash β] (s : SharedStack β) (hs : n
   rw [h, List.length_append, List.length_replicate, List.length_singleton]
 
 @[simp]
-theorem stackToNat_addToStack [Hash β] (s : SharedStack β) (b : β) :
-    stackToNat (addToStack s b) = s.stackToNat + 1 := by
+theorem stackcount_addToStack [Hash β] (s : SharedStack β) (b : β) :
+    stackcount (addToStack s b) = s.stackcount + 1 := by
   induction' s with a s IH generalizing b
-  · simp_rw [addToStack_nil, stackToNat_some_cons, stackToNat_nil]
+  · simp_rw [addToStack_nil, stackcount_some_cons, stackcount_nil]
   · cases' a
-    · simp_rw [addToStack_none_cons, stackToNat_some_cons, stackToNat_none_cons]
-    · simp_rw [addToStack_some_cons, stackToNat_none_cons, stackToNat_some_cons, IH, mul_add]
+    · simp_rw [addToStack_none_cons, stackcount_some_cons, stackcount_none_cons]
+    · simp_rw [addToStack_some_cons, stackcount_none_cons, stackcount_some_cons, IH, mul_add]
 
-theorem stackToNat_addToStack_ne_zero [Hash β] (s : SharedStack β) (b : β) :
-    stackToNat (addToStack s b) ≠ 0 := by
-  rw [stackToNat_addToStack] ; exact Nat.succ_ne_zero _
+theorem stackcount_addToStack_ne_zero [Hash β] (s : SharedStack β) (b : β) :
+    stackcount (addToStack s b) ≠ 0 := by
+  rw [stackcount_addToStack] ; exact Nat.succ_ne_zero _
 
 def addTupleToStack [Hash β] (s : SharedStack β) (bs : Fin k → β) : SharedStack β :=
   Fin.tuple_foldl addToStack s bs
@@ -669,11 +1015,11 @@ theorem length_addTupleToStack_pos [Hash β] [NeZero k] (s : SharedStack β) (bs
   rw [addTupleToStack_succ_last]
   exact length_addToStack_pos _ _
 
-theorem stackToNat_addTupleToStack [Hash β] (s : SharedStack β) (bs : Fin k → β) :
-    stackToNat (addTupleToStack s bs) = s.stackToNat + k := by
+theorem stackcount_addTupleToStack [Hash β] (s : SharedStack β) (bs : Fin k → β) :
+    stackcount (addTupleToStack s bs) = s.stackcount + k := by
   induction' k with k IH generalizing s
   · simp_rw [addTupleToStack_zero, add_zero]
-  · simp_rw [addTupleToStack_succ_last, stackToNat_addToStack, IH, add_assoc]
+  · simp_rw [addTupleToStack_succ_last, stackcount_addToStack, IH, add_assoc]
 
 theorem addTupleToStack_two_pow_succ [Hash β] (s : SharedStack β) (bs : Fin (2 ^ (n + 1)) → β) :
     addTupleToStack s bs = addTupleToStack (addTupleToStack s (twoPowSuccTupleDivide bs).1)
@@ -682,17 +1028,17 @@ theorem addTupleToStack_two_pow_succ [Hash β] (s : SharedStack β) (bs : Fin (2
 
 def finalHashStack [Hash β] (n : ℕ) (bs : Fin (2^n) → β) : SharedStack β := addTupleToStack [] bs
 
-theorem stackToNat_finalHashStack [Hash β] {n : ℕ} {bs : Fin (2^n) → β} :
-    stackToNat (finalHashStack n bs) = 2^n :=
-  (stackToNat_addTupleToStack _ _).trans (zero_add _)
+theorem stackcount_finalHashStack [Hash β] {n : ℕ} {bs : Fin (2^n) → β} :
+    stackcount (finalHashStack n bs) = 2^n :=
+  (stackcount_addTupleToStack _ _).trans (zero_add _)
 
 theorem lt_length_finalHashStack [Hash β] {n : ℕ} {bs : Fin (2^n) → β} :
     n < (finalHashStack n bs).length :=
-  lt_length_of_stackToNat_eq_two_pow stackToNat_finalHashStack
+  lt_length_of_stackcount_eq_two_pow stackcount_finalHashStack
 
 theorem getElem_isSome_finalHashStack [Hash β] {n : ℕ} {bs : Fin (2^n) → β} :
     ((finalHashStack n bs)[n]'lt_length_finalHashStack).isSome :=
-  getElem_isSome_of_stackToNat_eq_two_pow stackToNat_finalHashStack
+  getElem_isSome_of_stackcount_eq_two_pow stackcount_finalHashStack
 
 theorem finalHashStack_zero [Hash β] (bs : Fin (2^0) → β) : finalHashStack 0 bs = [some (bs 0)] := by
   refine (addTupleToStack_succ _ _).trans ?_
@@ -708,7 +1054,7 @@ end SharedStack
 
 instance : Hash UInt64 := ⟨fun a b => hash (a, b)⟩
 
-instance : Hash ℕ := ⟨fun a b => (hash (a, b)).toNat⟩
+instance : Hash ℕ := ⟨fun a b => (hash (a, b)).count⟩
 
 
 #eval BTree.finalHash 2 ![234234, 12, 44, 5324]

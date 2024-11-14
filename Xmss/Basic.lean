@@ -10,6 +10,44 @@ theorem Nat.testBit_ext_iff {q q' : ℕ} : q = q' ↔ (∀ i : ℕ, q.testBit i 
 theorem Nat.testBit_ne_iff {q q' : ℕ} : q ≠ q' ↔ (∃ i : ℕ, q.testBit i ≠ q'.testBit i) := by
   simp_rw [ne_eq, testBit_ext_iff, not_forall]
 
+instance {n m : ℕ} [NeZero n] [m.AtLeastTwo] : NeZero (m ^ n - 1) :=
+    ⟨Nat.sub_ne_zero_of_lt (Nat.one_lt_pow (NeZero.ne _) Nat.AtLeastTwo.one_lt)⟩
+
+theorem Nat.size_pred_pow {n : ℕ} : (2^n - 1).size = n := by
+  cases n
+  · simp_rw [pow_zero, Nat.sub_self, size_zero]
+  · exact le_antisymm (size_le.mpr <| Nat.pred_lt_self (Nat.two_pow_pos _))
+      (lt_size.mpr <| (Nat.le_pred_iff_lt (Nat.two_pow_pos _)).mpr (Nat.pow_lt_pow_succ one_lt_two))
+/-
+theorem Nat.log_eq_iff {b : ℕ} {m : ℕ} {n : ℕ} (h : m ≠ 0 ∨ 1 < b ∧ n ≠ 0) :
+Nat.log b n = m ↔ b ^ m ≤ n ∧ n < b ^ (m + 1)
+-/
+
+@[simp] theorem Nat.log2_one : Nat.log2 1 = 0 := Nat.log2_two_pow (n := 0)
+
+theorem Nat.log2_eq_iff_of_ne_zero (hn : n ≠ 0) : Nat.log2 n = m ↔ 2^m ≤ n ∧ n < 2^(m + 1) := by
+  rw [Nat.log2_eq_log_two, Nat.log_eq_iff (Or.inr ⟨one_lt_two, hn⟩)]
+
+theorem Nat.log2_eq_iff_of_ne_zero_right (hm : m ≠ 0) :
+    Nat.log2 n = m ↔ 2^m ≤ n ∧ n < 2^(m + 1) := by
+  rw [Nat.log2_eq_log_two, Nat.log_eq_iff (Or.inl hm)]
+
+theorem Nat.log2_eq_succ_iff :
+    log2 n = m + 1 ↔ 2^(m + 1) ≤ n ∧ n < 2^(m + 2) := log2_eq_iff_of_ne_zero_right (succ_ne_zero _)
+
+theorem Nat.log2_eq_zero_iff : Nat.log2 n = 0 ↔ n = 0 ∨ n = 1 := by
+  simp_rw [Nat.log2_eq_log_two, Nat.log_eq_zero_iff, one_lt_two.not_le, or_false,
+    Nat.lt_succ_iff, Nat.le_one_iff_eq_zero_or_eq_one]
+
+theorem Nat.log2_pred_two_pow {n : ℕ} : (2^n - 1).log2 = n - 1 := by
+  rcases n with (_ | (_ | n))
+  · simp_rw [pow_zero, Nat.sub_self, log2_zero]
+  · simp_rw [zero_add, pow_one, Nat.add_one_sub_one, log2_one]
+  · simp_rw [add_tsub_cancel_right, Nat.log2_eq_succ_iff]
+    refine ⟨Nat.le_sub_one_of_lt ?_, Nat.pred_lt_self (Nat.two_pow_pos _)⟩
+    simp_rw [pow_succ', Nat.mul_lt_mul_left zero_lt_two,
+      lt_mul_iff_one_lt_left (Nat.two_pow_pos _), one_lt_two]
+
 theorem Bool.cond_apply {α : Type*} {σ : α → Type*} (b : Bool) (f : (a : α) → σ a)
     (g : (a : α) → σ a) (a : α) : (bif b then f else g) a = bif b then f a else g a := b.rec rfl rfl
 
@@ -367,24 +405,22 @@ def listOfTree : {n : ℕ} → (Fin (2^n) → β) → BTree β
     let t₂ := listOfTree l
     node ((root t₁) # (root t₂)) t₁ t₂
 
-def finalHash' (n : ℕ) (bs : Fin (2^n) → β) : β := root (listOfTree bs)
-
-def finalHash : (n : ℕ) → (Fin (2^n) → β) → β
+def finalHash : {n : ℕ} → (Fin (2^n) → β) → β
   | 0, t => t 0
-  | (n + 1), t =>
+  | (_ + 1), t =>
     let (f, l) := twoPowSuccTupleDivide t
-    (finalHash n f) # (finalHash n l)
+    (finalHash f) # (finalHash l)
 
 theorem finalHash_zero (bs : Fin (2^0) → β) :
-  finalHash 0 bs = bs 0 := rfl
+  finalHash bs = bs 0 := rfl
 
 theorem finalHash_succ (n : ℕ) (bs : Fin (2^(n + 1)) → β) :
-  finalHash (n + 1) bs =
-  (finalHash n (twoPowSuccTupleDivide bs).1) #
-  (finalHash n (twoPowSuccTupleDivide bs).2) := rfl
+  finalHash bs =
+  (finalHash (twoPowSuccTupleDivide bs).1) #
+  (finalHash (twoPowSuccTupleDivide bs).2) := rfl
 
 theorem finalHash_succ_eq_finalHash (n : ℕ) (bs : Fin (2^(n + 1)) → β) :
-    finalHash (n + 1) bs = finalHash n (fun i =>
+    finalHash bs = finalHash (fun i =>
     bs (interleveTwoPow (Sum.inl i)) # bs (interleveTwoPow (Sum.inr i))) := by
   induction' n with n IH
   · exact rfl
@@ -410,24 +446,24 @@ variable {β : Type*} {a b : β} {p : PSharedStack β}
 instance [Inhabited β] : Inhabited (PSharedStack β) where
   default := sngl default
 
-def lg2 : PSharedStack β → ℕ
+def log2 : PSharedStack β → ℕ
   | sngl _ => 0
-  | bit0 p => p.lg2.succ
-  | bit1 _ p => p.lg2.succ
+  | bit0 p => p.log2.succ
+  | bit1 _ p => p.log2.succ
 
-section Lg2
+section Log2
 
-@[simp] theorem lg2_sngl : (sngl a).lg2 = 0 := rfl
-@[simp] theorem lg2_bit0 : (bit0 p).lg2 = p.lg2 + 1 := rfl
-@[simp] theorem lg2_bit1 : (bit1 a p).lg2 = p.lg2 + 1 := rfl
+@[simp] theorem log2_sngl : (sngl a).log2 = 0 := rfl
+@[simp] theorem log2_bit0 : (bit0 p).log2 = p.log2 + 1 := rfl
+@[simp] theorem log2_bit1 : (bit1 a p).log2 = p.log2 + 1 := rfl
 
-theorem lg2_bit0_ne_zero : (bit0 p).lg2 ≠ 0 := Nat.succ_ne_zero _
+theorem log2_bit0_ne_zero : (bit0 p).log2 ≠ 0 := Nat.succ_ne_zero _
 
-theorem lg2_bit1_ne_zero : (bit1 a p).lg2 ≠ 0 := Nat.succ_ne_zero _
+theorem log2_bit1_ne_zero : (bit1 a p).log2 ≠ 0 := Nat.succ_ne_zero _
 
-end Lg2
+end Log2
 
-def size (p : PSharedStack β) : ℕ := p.lg2 + 1
+def size (p : PSharedStack β) : ℕ := p.log2 + 1
 
 section Size
 
@@ -441,7 +477,7 @@ section Size
 
 @[simp] theorem one_le_size : 1 ≤ p.size := size_pos
 
-theorem size_eq_lg2_succ : p.size = p.lg2 + 1 := rfl
+theorem size_eq_log2_succ : p.size = p.log2 + 1 := rfl
 
 end Size
 
@@ -472,34 +508,37 @@ theorem count_bit1_ne_one : (bit1 a p).count ≠ 1 := by
   exact ⟨two_ne_zero, count_ne_zero⟩
 
 theorem count_lt_two_pow_size : p.count < 2^p.size := by
-  rw [size_eq_lg2_succ]
+  rw [size_eq_log2_succ]
   induction p with | sngl => _ | bit0 p IH => _ | bit1 _ _ IH => _
-  · rw [count_sngl, lg2_sngl, pow_one]
+  · rw [count_sngl, log2_sngl, pow_one]
     exact one_lt_two
   · rw [pow_succ']
     exact Nat.bit_lt_bit _ false IH
   · rw [pow_succ']
     exact Nat.bit_lt_bit _ false IH
 
-theorem two_pow_lg2_le_count : 2^p.lg2 ≤ p.count := by
+theorem count_le_pred_two_pow_size : p.count ≤ 2^p.size - 1 :=
+  Nat.le_pred_of_lt count_lt_two_pow_size
+
+theorem two_pow_log2_le_count : 2^p.log2 ≤ p.count := by
   induction p with | sngl => _ | bit0 p IH => _ | bit1 _ _ IH => _
-  · rw [lg2_sngl, pow_zero, count_sngl]
-  · simp_rw [lg2_bit0, count_bit0, pow_succ']
+  · rw [log2_sngl, pow_zero, count_sngl]
+  · simp_rw [log2_bit0, count_bit0, pow_succ']
     exact Nat.bit_le false IH
-  · simp_rw [lg2_bit1, count_bit1, pow_succ']
+  · simp_rw [log2_bit1, count_bit1, pow_succ']
     exact (Nat.bit_le false IH).trans (Nat.le_succ _)
 
 @[simp] theorem size_count_eq_size : p.count.size = p.size := by
   refine le_antisymm ((Nat.size_le).mpr count_lt_two_pow_size) ?_
-  rw [size_eq_lg2_succ, Nat.succ_le_iff, Nat.lt_size]
-  exact two_pow_lg2_le_count
+  rw [size_eq_log2_succ, Nat.succ_le_iff, Nat.lt_size]
+  exact two_pow_log2_le_count
 
-@[simp] theorem log_two_count_eq_lg2 : Nat.log 2 p.count = p.lg2 := by
-  exact Nat.log_eq_of_pow_le_of_lt_pow two_pow_lg2_le_count
-    (size_eq_lg2_succ ▸ count_lt_two_pow_size)
+@[simp] theorem log_two_count_eq_log2 : Nat.log 2 p.count = p.log2 := by
+  exact Nat.log_eq_of_pow_le_of_lt_pow two_pow_log2_le_count
+    (size_eq_log2_succ ▸ count_lt_two_pow_size)
 
-@[simp] theorem log2_count_eq_lg2 : p.count.log2 = p.lg2 := by
-  rw [Nat.log2_eq_log_two, log_two_count_eq_lg2]
+@[simp] theorem log2_count_eq_log2 : p.count.log2 = p.log2 := by
+  rw [Nat.log2_eq_log_two, log_two_count_eq_log2]
 
 end Count
 
@@ -518,24 +557,28 @@ section SizeCap
 
 theorem sizeCap_bit0_ne_zero : (bit0 p).sizeCap ≠ 0 := Nat.succ_ne_zero _
 
-theorem sizeCap_lt_pred_two_pow_size : p.sizeCap ≤ 2^p.lg2 - 1 := by
+theorem sizeCap_lt_pred_two_pow_size : p.sizeCap ≤ 2^p.log2 - 1 := by
   rw [le_tsub_iff_right Nat.one_le_two_pow]
   induction p with | sngl => exact le_rfl | bit0 p IH => _ | bit1 _ _ IH => _
-  · rw [sizeCap_bit0, lg2_bit0, pow_succ', add_assoc, ← Nat.mul_succ]
+  · rw [sizeCap_bit0, log2_bit0, pow_succ', add_assoc, ← Nat.mul_succ]
     exact Nat.mul_le_mul_left _ IH
-  · rw [sizeCap_bit1, lg2_bit1, pow_succ']
+  · rw [sizeCap_bit1, log2_bit1, pow_succ']
     refine (Nat.le_succ _).trans ?_
     simp_rw [Nat.succ_eq_add_one, add_assoc, one_add_one_eq_two, ← Nat.mul_succ]
     exact Nat.bit_le false IH
 
 theorem count_add_sizeCap_eq_pred_two_pow_size : p.count + p.sizeCap = 2^p.size - 1 := by
-  rw [size_eq_lg2_succ, eq_tsub_iff_add_eq_of_le Nat.one_le_two_pow, add_comm (p.count)]
+  rw [size_eq_log2_succ, eq_tsub_iff_add_eq_of_le Nat.one_le_two_pow, add_comm (p.count)]
   induction p with | sngl => _ | bit0 p IH => _ | bit1 _ _ IH => _
-  · simp_rw [sizeCap_sngl, count_sngl, lg2_sngl]
-  · simp_rw [sizeCap_bit0, count_bit0, pow_succ', lg2_bit0, add_assoc _ _ 1,
+  · simp_rw [sizeCap_sngl, count_sngl, log2_sngl]
+  · simp_rw [sizeCap_bit0, count_bit0, pow_succ', log2_bit0, add_assoc _ _ 1,
       Nat.add_add_add_comm _ 1, ← Nat.mul_add, ← Nat.mul_add_one, IH]
-  · simp_rw [sizeCap_bit1, count_bit1, pow_succ', lg2_bit1, add_assoc,
+  · simp_rw [sizeCap_bit1, count_bit1, pow_succ', log2_bit1, add_assoc,
       one_add_one_eq_two, ← add_assoc, ← Nat.mul_add, ← Nat.mul_add_one, IH]
+
+theorem sizeCap_eq_pred_two_pow_size_sub_count : p.sizeCap = (2^p.size - 1) - p.count := by
+  rw [eq_tsub_iff_add_eq_of_le (count_le_pred_two_pow_size), add_comm]
+  exact count_add_sizeCap_eq_pred_two_pow_size
 
 end SizeCap
 
@@ -555,7 +598,7 @@ theorem one_le_sizeInc : 1 ≤ p.sizeInc := Nat.one_le_iff_ne_zero.mpr sizeInc_n
 
 theorem sizeInc_eq_sizeCap_succ : p.sizeInc = p.sizeCap + 1 := rfl
 
-theorem sizeInc_lt_two_pow_size : p.sizeInc ≤ 2^p.lg2 := by
+theorem sizeInc_lt_two_pow_size : p.sizeInc ≤ 2^p.log2 := by
   rw [sizeInc_eq_sizeCap_succ]
   exact Nat.add_le_of_le_sub Nat.one_le_two_pow sizeCap_lt_pred_two_pow_size
 
@@ -563,68 +606,16 @@ theorem count_add_sizeInc_eq_two_pow_size : p.count + p.sizeInc = 2^p.size := by
   rw [sizeInc_eq_sizeCap_succ, ← Nat.add_assoc,
     count_add_sizeCap_eq_pred_two_pow_size, Nat.sub_add_cancel Nat.one_le_two_pow]
 
-theorem count_add_sizeInc_eq_two_pow_lg2_add_two_pow_lg2 :
-    p.count + p.sizeInc = 2^p.lg2 + 2^p.lg2 := by
-  rw [← two_mul, ← pow_succ', ← size_eq_lg2_succ]
+theorem sizeInc_eq_two_pow_size_sub_count : p.sizeInc = 2^p.size - p.count := by
+  rw [eq_tsub_iff_add_eq_of_le count_lt_two_pow_size.le, add_comm]
+  exact count_add_sizeInc_eq_two_pow_size
+
+theorem count_add_sizeInc_eq_two_pow_log2_add_two_pow_log2 :
+    p.count + p.sizeInc = 2^p.log2 + 2^p.log2 := by
+  rw [← two_mul, ← pow_succ', ← size_eq_log2_succ]
   exact count_add_sizeInc_eq_two_pow_size
 
 end SizeInc
-
-/-
-def ffs : PSharedStack β → ℕ
-  | sngl _ => 0
-  | bit0 p => p.ffs.succ
-  | bit1 _ _ => 0
-
-
-section Ffs
-
-@[simp] theorem ffs_sngl : (sngl a).ffs = 0 := rfl
-@[simp] theorem ffs_bit0 : (bit0 p).ffs = p.ffs + 1 := rfl
-@[simp] theorem ffs_bit1 : (bit1 a p).ffs = 0 := rfl
-
-theorem ffs_bit0_ne_zero : (bit0 p).ffs ≠ 0 := Nat.succ_ne_zero _
-
-theorem two_pow_ffs_lt_count : 2^p.ffs ≤ p.count := by
-  induction p with | sngl => _ | bit0 p IH => _ | bit1 _ _ IH => _
-  · simp_rw [ffs_sngl, pow_zero, count_sngl, le_refl]
-  · simp_rw [ffs_bit0, count_bit0, pow_succ']
-    exact Nat.mul_le_mul_left _ IH
-  · simp_rw [ffs_bit1, pow_zero, count_bit1]
-    exact Nat.succ_le_succ <| zero_le _
-
-theorem ffs_lt_size : p.ffs < p.size :=
-  (Nat.pow_lt_pow_iff_right (one_lt_two)).mp
-  (two_pow_ffs_lt_count.trans_lt count_lt_two_pow_size)
-
-theorem ffs_le_lg2 : p.ffs ≤ p.lg2 := by
-  rw [← Nat.lt_succ_iff]
-  exact ffs_lt_size.trans_eq size_eq_lg2_succ
-
-theorem two_pow_ffs_le_sizeCap : 2^p.ffs - 1 ≤ p.sizeCap := by
-  rw [Nat.sub_le_iff_le_add]
-  induction p with | sngl => _ | bit0 p IH => _ | bit1 _ _ IH => _
-  · simp_rw [ffs_sngl, pow_zero, sizeCap_sngl, zero_add, le_refl]
-  · simp_rw [ffs_bit0, sizeCap_bit0, pow_succ', add_assoc, one_add_one_eq_two,
-      ← Nat.mul_succ]
-    exact Nat.mul_le_mul_left _ IH
-  · simp_rw [ffs_bit1, pow_zero]
-    exact Nat.succ_le_succ <| zero_le _
-
-theorem two_pow_ffs_le_sizeInc : 2^p.ffs ≤ p.sizeInc := by
-  induction p with | sngl => _ | bit0 p IH => _ | bit1 _ _ IH => _
-  · simp_rw [ffs_sngl, pow_zero, sizeInc_sngl, le_refl]
-  · simp_rw [ffs_bit0, sizeInc_bit0, pow_succ']
-    exact Nat.mul_le_mul_left _ IH
-  · simp_rw [ffs_bit1, pow_zero]
-    exact Nat.succ_le_succ <| zero_le _
-
-theorem pred_two_pow_ffs_le_sizeInc : 2^p.ffs - 1 ≤ p.sizeCap := by
-  rw [Nat.sub_le_iff_le_add]
-  exact two_pow_ffs_le_sizeInc
-
-end Ffs
--/
 
 def toList : PSharedStack β → List (Option β)
   | sngl a => [some a]
@@ -678,24 +669,24 @@ section TestBit
 @[simp] theorem testBit_bit1 : (bit1 a p).testBit n = (decide (n = 0) || p.testBit (n - 1)) :=
   n.casesOn rfl (fun _ => rfl)
 
-theorem testBit_of_lg2_gt : p.lg2 < n → p.testBit n = false := by
+theorem testBit_of_log2_gt : p.log2 < n → p.testBit n = false := by
   induction p generalizing n with | sngl => _ | bit0 _ IH => _ | bit1 _ _ IH => _
-  · simp_rw [lg2_sngl, testBit_sngl, decide_eq_false_iff_not]
+  · simp_rw [log2_sngl, testBit_sngl, decide_eq_false_iff_not]
     exact ne_of_gt
-  · simp_rw [lg2_bit0, testBit_bit0, Bool.and_eq_false_imp, Bool.not_eq_eq_eq_not, Bool.not_true,
+  · simp_rw [log2_bit0, testBit_bit0, Bool.and_eq_false_imp, Bool.not_eq_eq_eq_not, Bool.not_true,
       decide_eq_false_iff_not]
     exact fun h _ => IH (Nat.lt_pred_of_succ_lt h)
-  · simp_rw [lg2_bit1, testBit_bit1, Bool.or_eq_false_iff, decide_eq_false_iff_not]
+  · simp_rw [log2_bit1, testBit_bit1, Bool.or_eq_false_iff, decide_eq_false_iff_not]
     exact fun h => ⟨Nat.not_eq_zero_of_lt h, IH (Nat.lt_pred_of_succ_lt h)⟩
 
 theorem testBit_of_size_ge : p.size ≤ n → p.testBit n = false := by
-  rw [size_eq_lg2_succ, Nat.succ_le_iff]
-  exact testBit_of_lg2_gt
+  rw [size_eq_log2_succ, Nat.succ_le_iff]
+  exact testBit_of_log2_gt
 
-theorem testBit_lg2 : p.testBit p.lg2 = true := p.recOn
+theorem testBit_log2 : p.testBit p.log2 = true := p.recOn
   (fun _ => rfl)
-  (fun _ => by simp_rw [lg2_bit0, testBit_bit0_succ, imp_self])
-  (fun _ _ => by simp_rw [lg2_bit1, testBit_bit1_succ, imp_self])
+  (fun _ => by simp_rw [log2_bit0, testBit_bit0_succ, imp_self])
+  (fun _ _ => by simp_rw [log2_bit1, testBit_bit1_succ, imp_self])
 
 @[simp]
 theorem testBit_count : p.count.testBit n = p.testBit n := by
@@ -724,45 +715,32 @@ section IsRoot
 @[simp] theorem isRoot_bit0_iff : (bit0 p).isRoot ↔ p.isRoot :=
   ⟨fun h => by cases h ; assumption, fun h => by constructor ; assumption⟩
 
-theorem isRoot_iff_count_eq_two_pow_lg2 : p.isRoot ↔ p.count = 2^p.lg2 := by
+theorem isRoot_iff_count_eq_two_pow_log2 : p.isRoot ↔ p.count = 2^p.log2 := by
   induction p with | sngl a => _ | bit0 p IH => _ | bit1 a p IH => _
-  · simp_rw [isRoot_sngl, count_sngl, lg2_sngl, pow_zero]
-  · simp_rw [isRoot_bit0_iff, IH, count_bit0, lg2_bit0, pow_succ', mul_eq_mul_left_iff,
+  · simp_rw [isRoot_sngl, count_sngl, log2_sngl, pow_zero]
+  · simp_rw [isRoot_bit0_iff, IH, count_bit0, log2_bit0, pow_succ', mul_eq_mul_left_iff,
       zero_lt_two.ne', or_false]
-  · simp_rw [not_isRoot_bit1, count_bit1, lg2_bit1, false_iff, pow_succ']
+  · simp_rw [not_isRoot_bit1, count_bit1, log2_bit1, false_iff, pow_succ']
     exact (Nat.two_mul_ne_two_mul_add_one).symm
 
 theorem isRoot_iff_exists_size_eq_two_pow : p.isRoot ↔ ∃ k, p.count = 2^k := by
-  rw [isRoot_iff_count_eq_two_pow_lg2]
+  rw [isRoot_iff_count_eq_two_pow_log2]
   refine ⟨fun h => ⟨_, h⟩, fun ⟨k, hk⟩ => ?_⟩
-  have H := hk ▸ p.log_two_count_eq_lg2
+  have H := hk ▸ p.log_two_count_eq_log2
   rw [Nat.log_pow one_lt_two] at H
   exact H ▸ hk
 
-theorem isRoot_iff_sizeInc_eq_two_pow_lg2 : p.isRoot ↔ p.sizeInc = 2^p.lg2 := by
-  rw [isRoot_iff_count_eq_two_pow_lg2]
-  have H := p.count_add_sizeInc_eq_two_pow_lg2_add_two_pow_lg2
+theorem isRoot_iff_sizeInc_eq_two_pow_log2 : p.isRoot ↔ p.sizeInc = 2^p.log2 := by
+  rw [isRoot_iff_count_eq_two_pow_log2]
+  have H := p.count_add_sizeInc_eq_two_pow_log2_add_two_pow_log2
   exact ⟨fun h => add_right_injective _ (h ▸ H), fun h => add_left_injective _ (h ▸ H)⟩
 
-theorem isRoot_iff_sizeCap_eq_two_pow_lg2 : p.isRoot ↔ p.sizeCap = 2^p.lg2 - 1 := by
-  rw [isRoot_iff_sizeInc_eq_two_pow_lg2, sizeInc_eq_sizeCap_succ,
+theorem isRoot_iff_sizeCap_eq_two_pow_log2 : p.isRoot ↔ p.sizeCap = 2^p.log2 - 1 := by
+  rw [isRoot_iff_sizeInc_eq_two_pow_log2, sizeInc_eq_sizeCap_succ,
     eq_tsub_iff_add_eq_of_le Nat.one_le_two_pow]
 
 instance : Decidable (p.isRoot) :=
-  decidable_of_iff _ isRoot_iff_count_eq_two_pow_lg2.symm
-
-theorem isRoot_iff_toList_eq_replicate_lg2_append_singleton :
-    p.isRoot ↔ p.toList = List.replicate p.lg2 none ++ [some p.pop] := by
-  induction p with | sngl a => _ | bit0 p IH => _ | bit1 a p IH => _
-  · simp_rw [isRoot_sngl, toList_sngl, lg2_sngl, List.replicate_zero, pop_sngl, List.nil_append]
-  · simp_rw [isRoot_bit0_iff, IH, toList_bit0, lg2_bit0, List.replicate_succ, pop_bit0,
-    List.cons_append, List.cons_inj_right]
-  · simp_rw [not_isRoot_bit1, toList_bit1, lg2_bit1, List.replicate_succ, pop_bit1,
-      List.cons_append, List.cons_eq_cons, Option.some_ne_none, false_and]
-
-theorem isRoot_iff_toList_eq_replicate_size_pred_append_singleton :
-    p.isRoot ↔ p.toList = List.replicate (p.size - 1) none ++ [some p.pop] := by
- rw [size_eq_lg2_succ, Nat.add_sub_cancel, isRoot_iff_toList_eq_replicate_lg2_append_singleton]
+  decidable_of_iff _ isRoot_iff_count_eq_two_pow_log2.symm
 
 end IsRoot
 
@@ -784,7 +762,7 @@ theorem isMaxed_iff_count_eq_pred_two_pow_size :
   rw [eq_tsub_iff_add_eq_of_le Nat.one_le_two_pow]
   induction p with | sngl a => _ | bit0 p IH => _ | bit1 a p IH => _
   · simp_rw [isMaxed_sngl, count_sngl, size_sngl]
-  · simp_rw [not_isMaxed_bit0, count_bit0, false_iff, size_eq_lg2_succ, pow_succ']
+  · simp_rw [not_isMaxed_bit0, count_bit0, false_iff, size_eq_log2_succ, pow_succ']
     exact (Nat.two_mul_ne_two_mul_add_one).symm
   · simp_rw [isMaxed_bit1_iff, IH, count_bit1, size_bit1, pow_succ', add_assoc,
       ← Nat.mul_succ, mul_eq_mul_left_iff, zero_lt_two.ne', or_false]
@@ -818,14 +796,14 @@ theorem isSingle_iff_count_eq_one : p.isSingle ↔ p.count = 1 := by
   · exact iff_of_false not_isSingle_bit0 count_bit0_ne_one
   · exact iff_of_false not_isSingle_bit1 count_bit1_ne_one
 
-theorem isSingle_iff_lg2_eq_zero : p.isSingle ↔ p.lg2 = 0 := by
+theorem isSingle_iff_log2_eq_zero : p.isSingle ↔ p.log2 = 0 := by
   cases p
-  · exact iff_of_true isSingle_sngl lg2_sngl
-  · exact iff_of_false not_isSingle_bit0 lg2_bit0_ne_zero
-  · exact iff_of_false not_isSingle_bit1 lg2_bit1_ne_zero
+  · exact iff_of_true isSingle_sngl log2_sngl
+  · exact iff_of_false not_isSingle_bit0 log2_bit0_ne_zero
+  · exact iff_of_false not_isSingle_bit1 log2_bit1_ne_zero
 
 theorem isSingle_iff_size_eq_one : p.isSingle ↔ p.size = 1 := by
-  rw [isSingle_iff_lg2_eq_zero, size_eq_lg2_succ, add_left_eq_self]
+  rw [isSingle_iff_log2_eq_zero, size_eq_log2_succ, add_left_eq_self]
 
 theorem isSingle_iff_exists_sngl : p.isSingle ↔ ∃ a, p = sngl a := by
   cases p
@@ -839,6 +817,19 @@ instance : Decidable (p.isSingle) := decidable_of_iff _ isMaxed_and_isRoot_iff_i
 
 end IsSingle
 
+def appendSingle : PSharedStack β → β → PSharedStack β
+  | sngl a, b => bit1 a (sngl b)
+  | (bit0 p), b => bit0 (appendSingle p b)
+  | (bit1 a p), b => bit1 a (appendSingle p b)
+
+section AppendSingle
+
+@[simp] theorem appendSingle_sngl : (sngl a).appendSingle b = bit1 a (sngl b) := rfl
+@[simp] theorem appendSingle_bit0 : (bit0 p).appendSingle b = bit0 (p.appendSingle b) := rfl
+@[simp] theorem appendSingle_bit1 : (bit1 a p).appendSingle b = bit1 a (p.appendSingle b) := rfl
+
+end AppendSingle
+
 def last : PSharedStack β → β
   | sngl a => a
   | bit0 p => p.last
@@ -849,6 +840,42 @@ section Last
 @[simp] theorem last_sngl : (sngl a).last = a := rfl
 @[simp] theorem last_bit0 : (bit0 p).last = p.last := rfl
 @[simp] theorem last_bit1 : (bit1 a p).last = p.last := rfl
+
+@[simp] theorem last_appendSingle : (p.appendSingle b).last = b := by
+  induction p with | sngl a => _ | bit0 p IH => _ | bit1 a p IH => _
+  · simp_rw [appendSingle_sngl, last_bit1, last_sngl]
+  · simp_rw [appendSingle_bit0, last_bit0, IH]
+  · simp_rw [appendSingle_bit1, last_bit1, IH]
+
+theorem isRoot_iff_eq_iterate_log2_sngl_last :
+    p.isRoot ↔ p = p.log2.iterate bit0 (sngl p.last) := by
+  induction p with | sngl a => _ | bit0 p IH => _ | bit1 a p IH => _
+  · simp_rw [isRoot_sngl, log2_sngl, last_sngl, Function.iterate_zero, id_eq]
+  · simp_rw [isRoot_bit0_iff, log2_bit0, last_bit0, Function.iterate_succ', Function.comp_apply,
+      bit0.injEq, IH]
+  · simp_rw [not_isRoot_bit1, log2_bit1, last_bit1, Function.iterate_succ', Function.comp_apply,
+      false_iff]
+    exact PSharedStack.noConfusion
+
+theorem isRoot_iff_toList_eq_replicate_log2_append_singleton :
+    p.isRoot ↔ p.toList = List.replicate p.log2 none ++ [some p.last] := by
+  induction p with | sngl a => _ | bit0 p IH => _ | bit1 a p IH => _
+  · simp_rw [isRoot_sngl, toList_sngl, log2_sngl, List.replicate_zero, last_sngl, List.nil_append]
+  · simp_rw [isRoot_bit0_iff, IH, toList_bit0, log2_bit0, List.replicate_succ, last_bit0,
+    List.cons_append, List.cons_inj_right]
+  · simp_rw [not_isRoot_bit1, toList_bit1, log2_bit1, List.replicate_succ, last_bit1,
+      List.cons_append, List.cons_eq_cons, Option.some_ne_none, false_and]
+
+theorem isMaxed_iff_eq_iterate_log2_sngl_pop :
+    p.isMaxed ↔ ∃ (bs : Fin (p.log2) → β), p = Fin.foldr p.log2 (bit1 ∘ bs) (sngl p.last) := by
+  induction p with | sngl a => _ | bit0 p IH => _ | bit1 a p IH => _
+  · simp_rw [isMaxed_sngl, log2_sngl, last_sngl, Fin.foldr_zero, exists_const]
+  · simp_rw [not_isMaxed_bit0, log2_bit0, last_bit0, false_iff, not_exists, Fin.foldr_succ,
+      Function.comp_apply]
+    exact fun _ => PSharedStack.noConfusion
+  · simp_rw [isMaxed_bit1_iff, log2_bit1, last_bit1, Fin.foldr_succ,
+      Function.comp_apply, bit1.injEq, IH]
+    exact ⟨fun ⟨_, h⟩ => ⟨Fin.cons _ _, ⟨rfl, h⟩⟩, fun ⟨_, _, h⟩ => ⟨_, h⟩⟩
 
 end Last
 
@@ -863,6 +890,12 @@ section Pop
 @[simp] theorem pop_bit0 : (bit0 p).pop = p.pop := rfl
 @[simp] theorem pop_bit1 : (bit1 a p).pop = a := rfl
 
+@[simp] theorem pop_appendSingle : (p.appendSingle b).pop = p.pop := by
+  induction p with | sngl a => _ | bit0 p IH => _ | bit1 a p IH => _
+  · simp_rw [appendSingle_sngl, pop_bit1, pop_sngl]
+  · simp_rw [appendSingle_bit0, pop_bit0, IH]
+  · simp_rw [appendSingle_bit1, pop_bit1]
+
 theorem pop_eq_last_of_isRoot : p.isRoot → p.pop = p.last := by
   induction p with | sngl a => _ | bit0 p IH => _ | bit1 a p IH => _
   · simp_rw [pop_sngl, last_sngl, implies_true]
@@ -871,6 +904,21 @@ theorem pop_eq_last_of_isRoot : p.isRoot → p.pop = p.last := by
   · simp_rw [not_isRoot_bit1, false_implies]
 
 end Pop
+
+def accumulateLower [Hash β] : (p : PSharedStack β) → β → β
+  | (bit1 a p), b => accumulateLower p (a # b)
+  | _, b => b
+
+section AccumulateLower
+
+variable [Hash β]
+
+@[simp] theorem accumulateLower_sngl : (sngl a).accumulateLower b = b := rfl
+@[simp] theorem accumulateLower_bit0 : (bit0 p).accumulateLower b = b := rfl
+@[simp] theorem accumulateLower_bit1 :
+    (bit1 a p).accumulateLower b = p.accumulateLower (a # b) := rfl
+
+end AccumulateLower
 
 section Push
 
@@ -895,25 +943,25 @@ theorem push_isRoot_iff_isMaxed : (p.push b).isRoot ↔ p.isMaxed := by
   · simp_rw [push_bit1, isRoot_bit0_iff, isMaxed_bit1_iff, IH]
 
 @[simp]
-theorem count_push : (p.push b).count = p.count.succ := by
+theorem count_push : (p.push b).count = p.count + 1 := by
   induction p generalizing b with | sngl => rfl | bit0 => rfl | bit1 _ _ IH => exact congrArg _ IH
 
-theorem lg2_push : (p.push b).lg2 = p.lg2 + (decide (p.isMaxed)).toNat := by
+theorem log2_push : (p.push b).log2 = p.log2 + (decide (p.isMaxed)).toNat := by
   induction p generalizing b with | sngl => _ | bit0 => _ | bit1 _ _ IH => _
-  · simp_rw [push_sngl, lg2_bit0, lg2_sngl, isMaxed_sngl, decide_True, Bool.toNat_true]
-  · simp_rw [push_bit0, lg2_bit0, lg2_bit1, not_isMaxed_bit0, decide_False, Bool.toNat_false]
-  · simp_rw [push_bit1, lg2_bit0, lg2_bit1, isMaxed_bit1_iff, IH, add_assoc, add_comm]
+  · simp_rw [push_sngl, log2_bit0, log2_sngl, isMaxed_sngl, decide_True, Bool.toNat_true]
+  · simp_rw [push_bit0, log2_bit0, log2_bit1, not_isMaxed_bit0, decide_False, Bool.toNat_false]
+  · simp_rw [push_bit1, log2_bit0, log2_bit1, isMaxed_bit1_iff, IH, add_assoc, add_comm]
 
-theorem lg2_push_of_isMaxed (hp : p.isMaxed) : (p.push b).lg2 = p.lg2 + 1 := by
-  simp_rw [lg2_push, hp]
+theorem log2_push_of_isMaxed (hp : p.isMaxed) : (p.push b).log2 = p.log2 + 1 := by
+  simp_rw [log2_push, hp]
   rfl
 
-theorem lg2_push_of_not_isMaxed (hp : ¬ p.isMaxed) : (p.push b).lg2 = p.lg2 := by
-  simp_rw [lg2_push, hp]
+theorem log2_push_of_not_isMaxed (hp : ¬ p.isMaxed) : (p.push b).log2 = p.log2 := by
+  simp_rw [log2_push, hp]
   rfl
 
 theorem size_push : (p.push b).size = p.size + (decide (p.isMaxed)).toNat := by
-  simp_rw [size_eq_lg2_succ, lg2_push, Nat.add_right_comm]
+  simp_rw [size_eq_log2_succ, log2_push, Nat.add_right_comm]
 
 theorem size_push_of_isMaxed (hp : p.isMaxed) : (p.push b).size = p.size + 1 := by
   simp_rw [size_push, hp]
@@ -923,6 +971,17 @@ theorem size_push_of_not_isMaxed (hp : ¬ p.isMaxed) : (p.push b).size = p.size 
   simp_rw [size_push, hp]
   rfl
 
+theorem sizeInc_push_of_not_isMaxed (hp : ¬ p.isMaxed) :
+    (p.push b).sizeInc = p.sizeInc - 1 := by
+  simp_rw [sizeInc_eq_two_pow_size_sub_count, count_push, size_push_of_not_isMaxed hp]
+  exact Nat.sub_succ' _ _
+
+theorem sizeInc_push_of_isMaxed (hp : p.isMaxed) :
+    (p.push b).sizeInc = 2^p.size := by
+  simp_rw [sizeInc_eq_two_pow_size_sub_count, count_push, size_push_of_isMaxed hp,
+    isMaxed_iff_count_eq_pred_two_pow_size.mp hp, Nat.sub_one_add_one (Nat.two_pow_pos _).ne',
+    pow_succ', two_mul, Nat.add_sub_cancel]
+
 theorem last_push_eq_push_of_not_isMaxed (hp : ¬ p.isMaxed) : (p.push b).last = p.last := by
   induction p generalizing b with | sngl => _ | bit0 => _ | bit1 _ _ IH => _
   · exact (hp isMaxed_sngl).elim
@@ -930,14 +989,14 @@ theorem last_push_eq_push_of_not_isMaxed (hp : ¬ p.isMaxed) : (p.push b).last =
   · simp_rw [isMaxed_bit1_iff] at hp
     simp_rw [push_bit1, last_bit0, IH hp, last_bit1]
 
-theorem last_push_eq_hash_of_isMaxed (hp : p.isMaxed) : (p.push b).last =
-    p.last # ((fun p b => _) p b) := by
+theorem last_push_eq_hash_of_isMaxed (hp : p.isMaxed) :
+    (p.push b).last = p.last # p.accumulateLower b := by
   induction p generalizing b with | sngl => _ | bit0 => _ | bit1 _ _ IH => _
-  · simp
-  · simp at hp
+  · simp_rw [push_sngl, last_bit0, last_sngl, accumulateLower_sngl]
+  · simp_rw [not_isMaxed_bit0] at hp
   · simp_rw [isMaxed_bit1_iff] at hp
-    simp [IH hp]
-    simp_rw [push_bit1, last_bit0, IH hp, last_bit1]
+    simp_rw [push_bit1, last_bit0, IH hp, last_bit1, accumulateLower_bit1]
+
 
 end Push
 
@@ -957,6 +1016,9 @@ open Fin
 
 theorem pushTuple_succ {bs : Fin (k + 1) → β} :
   p.pushTuple bs = (p.push (bs 0)).pushTuple (Fin.tail bs) := rfl
+
+theorem pushTuple_bit0_succ {bs : Fin (k + 1) → β} :
+  (bit0 p).pushTuple bs = (bit1 (bs 0) p).pushTuple (Fin.tail bs) := rfl
 
 theorem pushTuple_succ_last {bs : Fin (k + 1) → β} :
     p.pushTuple bs = (p.pushTuple (Fin.init bs)).push (bs (Fin.last k)) := by
@@ -1032,16 +1094,16 @@ theorem size_pushTuple_of_le_sizeCap (hk : k ≤ p.sizeCap) : (p.pushTuple bs).s
 theorem size_pushTuple_sizeCap {bs : Fin k → β} (hk : k = p.sizeCap) :
     (p.pushTuple bs).size = p.size := size_pushTuple_of_le_sizeCap hk.le
 
-theorem lg2_pushTuple_of_lt_sizeInc (hk : k < p.sizeInc) : (p.pushTuple bs).lg2 = p.lg2 := by
+theorem log2_pushTuple_of_lt_sizeInc (hk : k < p.sizeInc) : (p.pushTuple bs).log2 = p.log2 := by
   apply add_left_injective 1
-  simp_rw [← size_eq_lg2_succ]
+  simp_rw [← size_eq_log2_succ]
   exact size_pushTuple_of_lt_sizeInc hk
 
-theorem lg2_pushTuple_of_le_sizeCap (hk : k ≤ p.sizeCap) : (p.pushTuple bs).lg2 = p.lg2 :=
-  lg2_pushTuple_of_lt_sizeInc (Nat.lt_succ_of_le hk)
+theorem log2_pushTuple_of_le_sizeCap (hk : k ≤ p.sizeCap) : (p.pushTuple bs).log2 = p.log2 :=
+  log2_pushTuple_of_lt_sizeInc (Nat.lt_succ_of_le hk)
 
-theorem lg2_pushTuple_sizeCap {bs : Fin k → β} (hk : k = p.sizeCap) :
-    (p.pushTuple bs).lg2 = p.lg2 := lg2_pushTuple_of_le_sizeCap hk.le
+theorem log2_pushTuple_sizeCap {bs : Fin k → β} (hk : k = p.sizeCap) :
+    (p.pushTuple bs).log2 = p.log2 := log2_pushTuple_of_le_sizeCap hk.le
 
 theorem isMaxed_pushTuple_sizeCap {bs : Fin k → β} (hk : k = p.sizeCap) :
     (p.pushTuple bs).isMaxed := by
@@ -1062,34 +1124,39 @@ theorem size_pushTuple_sizeInc {bs : Fin k → β} (hk : k = p.sizeInc) :
   · rw [pushTuple_succ_last, size_push_of_isMaxed (isMaxed_pushTuple_sizeCap rfl),
       size_pushTuple_sizeCap rfl]
 
-theorem lg2_pushTuple_sizeInc {bs : Fin k → β} (hk : k = p.sizeInc) :
-    (p.pushTuple bs).lg2 = p.lg2 + 1 := add_left_injective 1 <| by
-  simp_rw [← size_eq_lg2_succ, size_pushTuple_sizeInc hk]
+theorem log2_pushTuple_sizeInc {bs : Fin k → β} (hk : k = p.sizeInc) :
+    (p.pushTuple bs).log2 = p.log2 + 1 := add_left_injective 1 <| by
+  simp_rw [← size_eq_log2_succ, size_pushTuple_sizeInc hk]
 
-theorem pushTuple_two_pow_lg2_isRoot_of_isRoot (hp : p.isRoot) {bs : Fin k → β}
-    (hk : k = 2^p.lg2) : (p.pushTuple bs).isRoot :=
-  isRoot_pushTuple_sizeInc (hk ▸ (isRoot_iff_sizeInc_eq_two_pow_lg2.mp hp).symm)
+theorem pushTuple_two_pow_log2_isRoot_of_isRoot (hp : p.isRoot) {bs : Fin k → β}
+    (hk : k = 2^p.log2) : (p.pushTuple bs).isRoot :=
+  isRoot_pushTuple_sizeInc (hk ▸ (isRoot_iff_sizeInc_eq_two_pow_log2.mp hp).symm)
 
-theorem lg2_pushTuple_two_pow_lg2_eq_succ_of_isRoot (hp : p.isRoot) {bs : Fin k → β}
-    (hk : k = 2^p.lg2) :
-    (p.pushTuple bs).lg2 = p.lg2 + 1 :=
-  lg2_pushTuple_sizeInc (hk ▸ (isRoot_iff_sizeInc_eq_two_pow_lg2.mp hp).symm)
+theorem pushTuple_pred_two_pow_log2_isMaxed_of_isRoot (hp : p.isRoot) {bs : Fin k → β}
+    (hk : k = 2^p.log2 - 1) : (p.pushTuple bs).isMaxed :=
+  isMaxed_pushTuple_sizeCap (hk ▸ (isRoot_iff_sizeCap_eq_two_pow_log2.mp hp).symm)
 
-theorem size_pushTuple_two_pow_lg2_eq_succ_of_isRoot (hp : p.isRoot) {bs : Fin k → β}
-    (hk : k = 2^p.lg2) :
+theorem log2_pushTuple_two_pow_log2_eq_succ_of_isRoot (hp : p.isRoot) {bs : Fin k → β}
+    (hk : k = 2^p.log2) :
+    (p.pushTuple bs).log2 = p.log2 + 1 :=
+  log2_pushTuple_sizeInc (hk ▸ (isRoot_iff_sizeInc_eq_two_pow_log2.mp hp).symm)
+
+theorem size_pushTuple_two_pow_log2_eq_succ_of_isRoot (hp : p.isRoot) {bs : Fin k → β}
+    (hk : k = 2^p.log2) :
     (p.pushTuple bs).size = p.size + 1 :=
-  size_pushTuple_sizeInc (hk ▸ (isRoot_iff_sizeInc_eq_two_pow_lg2.mp hp).symm)
+  size_pushTuple_sizeInc (hk ▸ (isRoot_iff_sizeInc_eq_two_pow_log2.mp hp).symm)
 
 end PushTuple
 
-/-
+
 def stackOfTuple [Hash β] [NeZero k] (bs : Fin k → β) : PSharedStack β :=
-  (sngl (bs 0)).pushTuple (fun (i : Fin (k - 1)) => bs
-  (Fin.cast (Nat.sub_add_cancel NeZero.one_le) i.succ))
+    (sngl (bs 0)).pushTuple (fun ⟨i, hi⟩ => bs ⟨i.succ, Nat.succ_lt_of_lt_pred hi⟩)
 
 section StackOfTuple
 
-variable {n : ℕ} {bs : Fin k → β} [Hash β]
+open Fin
+
+variable {n m k : ℕ} {bs : Fin k → β} [Hash β]
 
 @[simp] theorem stackOfTuple_one {bs : Fin 1 → β} : stackOfTuple bs = sngl (bs 0) := rfl
 
@@ -1098,107 +1165,113 @@ theorem stackOfTuple_succ {bs : Fin (k + 1) → β} :
 
 theorem stackOfTuple_succ_last [NeZero k] {bs : Fin (k + 1) → β} :
     stackOfTuple bs = (stackOfTuple (Fin.init bs)).push (bs (Fin.last k)) := by
-  rw [stackOfTuple_succ]
   cases k
   · exact (NeZero.ne 0 rfl).elim
-  · apply pushTuple_congr
+  · exact pushTuple_succ_last
 
-end StackOfTuple
+theorem stackOfTuple_add [NeZero m] (bs : Fin (m + n) → β) :
+  haveI : NeZero (m + n) := ⟨add_ne_zero.mpr (Or.inl <| NeZero.ne m)⟩ ;
+  stackOfTuple bs = (stackOfTuple fun i => bs (Fin.castAdd n i)).pushTuple
+    fun i => bs (Fin.natAdd m i) := by
+  induction n generalizing m with | zero => _ | succ n IH => _
+  · simp_rw [Fin.castAdd_zero, Fin.cast_eq_self, pushTuple_zero]
+  · haveI : NeZero (m + n) := ⟨add_ne_zero.mpr (Or.inl <| NeZero.ne m)⟩
+    simp_rw [stackOfTuple_succ_last, IH, pushTuple_succ_last]
+    rfl
 
+theorem stackOfTuple_cons : stackOfTuple (cons b bs) = (sngl b).pushTuple bs := stackOfTuple_succ
 
-def twoPowStackOfTuple [Hash β] : {n : ℕ} → (Fin (2^n) → β) → PSharedStack β
-  | 0 => fun bs => sngl (bs 0)
-  | (_ + 1) => fun bs =>
-    let (f, l) := twoPowSuccTupleDivide bs
-    (twoPowStackOfTuple f).pushTuple l
+theorem stackOfTuple_snoc [NeZero k] :
+    stackOfTuple (snoc bs b) = (stackOfTuple bs).push b := by
+  simp_rw [stackOfTuple_succ_last, init_snoc, snoc_last]
 
-section TwoPowStackOfTuple
+theorem stackOfTuple_append [NeZero m] {bs₁ : Fin m → β} {bs₂ : Fin n → β} :
+    haveI : NeZero (m + n) := ⟨add_ne_zero.mpr (Or.inl <| NeZero.ne m)⟩ ;
+    (stackOfTuple bs₁).pushTuple bs₂ = stackOfTuple (append bs₁ bs₂) := by
+  simp_rw [stackOfTuple_add, append_left, append_right]
 
-variable {n : ℕ} {bs : Fin (2^n) → β} [Hash β]
-
-@[simp] theorem twoPowStackOfTuple_zero {bs : Fin (2^0) → β} : twoPowStackOfTuple bs = sngl (bs 0) := rfl
-
-@[simp] theorem twoPowStackOfTuple_succ {bs : Fin (2^(n + 1)) → β} :
-    twoPowStackOfTuple bs = (twoPowStackOfTuple (twoPowSuccTupleDivide bs).1).pushTuple
-    (twoPowSuccTupleDivide bs).2 := rfl
-
-theorem twoPowStackOfTuple_congr {n' : ℕ} (hn : n = n') {bs' : Fin (2^n') → β}
-  (hbs : bs = fun i => bs' <| Fin.cast (hn ▸ rfl) i) :
-    twoPowStackOfTuple bs = twoPowStackOfTuple bs' := by
-  cases hn
-  cases hbs
+@[simp] theorem stackOfTuple_cast (h : k' = k) [NeZero k] :
+    haveI : NeZero k' := ⟨h.trans_ne (NeZero.ne _)⟩
+    stackOfTuple (fun i => bs <| Fin.cast h i) = stackOfTuple bs := by
+  cases h
   rfl
 
-theorem twoPowStackOfTuple_count : (twoPowStackOfTuple bs).count = 2^n := by
-  induction n with | zero => _ | succ n IH => _
-  · rfl
-  · simp_rw [twoPowStackOfTuple_succ, count_pushTuple, IH, pow_succ', two_mul]
+@[simp] theorem count_stackOfTuple [NeZero k] : (stackOfTuple bs).count = k := by
+  unfold stackOfTuple
+  simp_rw [count_pushTuple, count_sngl, add_comm]
+  exact Nat.succ_pred (NeZero.ne _)
 
-@[simp] theorem twoPowStackOfTuple_lg2 : (twoPowStackOfTuple bs).lg2 = n :=
-  (Nat.log2_two_pow ▸ twoPowStackOfTuple_count (bs := bs) ▸
-    (twoPowStackOfTuple bs).log2_count_eq_lg2).symm
+@[simp] theorem log2_stackOfTuple [NeZero k] : (stackOfTuple bs).log2 = k.log2 :=
+  (stackOfTuple bs).log2_count_eq_log2 ▸ (congrArg _ count_stackOfTuple)
 
-@[simp] theorem twoPowStackOfTuple_size : (twoPowStackOfTuple bs).size = n + 1 := by
-  rw [size_eq_lg2_succ, twoPowStackOfTuple_lg2]
+@[simp] theorem size_stackOfTuple [NeZero k] : (stackOfTuple bs).size = k.size :=
+  (stackOfTuple bs).size_count_eq_size ▸ (congrArg _ count_stackOfTuple)
 
-@[simp] theorem twoPowStackOfTuple_isRoot : (twoPowStackOfTuple bs).isRoot := by
-  rw [isRoot_iff_count_eq_two_pow_lg2, twoPowStackOfTuple_count, twoPowStackOfTuple_lg2]
+theorem isRoot_stackOfTuple_iff_two_pow [NeZero k] :
+    (stackOfTuple bs).isRoot ↔ ∃ n, k = 2^n := by
+  rw [isRoot_iff_count_eq_two_pow_log2, count_stackOfTuple, log2_stackOfTuple]
+  exact ⟨fun h => ⟨_, h⟩, fun ⟨_, h⟩ => h ▸ Nat.log2_two_pow ▸ rfl⟩
 
-theorem blahj {bs : Fin k → β} (hp : p.isRoot) (hk : k = 2^p.lg2) :
-    (p.pushTuple bs).pop = p.pop # (twoPowStackOfTuple (fun i => bs <| Fin.cast hk.symm i)).pop := by
+theorem isMaxed_stackOfTuple_iff_two_pow_sub_one [NeZero k] :
+    (stackOfTuple bs).isMaxed ↔ ∃ n, k = 2^n - 1 := by
+  rw [isMaxed_iff_count_eq_pred_two_pow_size, count_stackOfTuple, size_stackOfTuple]
+  exact ⟨fun h => ⟨_, h⟩, fun ⟨_, h⟩ => h ▸ Nat.size_pred_pow ▸ rfl⟩
+
+@[simp] theorem stackOfTwoPowTuple_zero {bs : Fin (2^0) → β} :
+    stackOfTuple bs = sngl (bs 0) := rfl
+
+@[simp] theorem stackOfTwoPowTuple_succ {bs : Fin (2^(n + 1)) → β} [NeZero k] :
+    stackOfTuple bs = (stackOfTuple (twoPowSuccTupleDivide bs).1).pushTuple
+    (twoPowSuccTupleDivide bs).2 := by
+  simp_rw [stackOfTuple_append, append_eq_twoPowSuccTuple_symm, Prod.mk.eta,
+    Equiv.symm_apply_apply, stackOfTuple_cast]
+
+theorem isRoot_stackOfTwoPowTuple {bs : Fin (2^n) → β} : (stackOfTuple bs).isRoot :=
+  isRoot_stackOfTuple_iff_two_pow.mpr ⟨_, rfl⟩
+
+theorem count_stackOfTwoPowTuple_pos {bs : Fin (2^n) → β} : 0 < (stackOfTuple bs).count := by
+  rw [count_stackOfTuple]
+  exact Nat.two_pow_pos _
+
+theorem count_stackOfTwoPowTuple_ne {bs : Fin (2^n) → β} : (stackOfTuple bs).count ≠ 0 :=
+  count_stackOfTwoPowTuple_pos.ne'
+
+theorem log2_stackOfTwoPowTuple {bs : Fin (2^n) → β} : (stackOfTuple bs).log2 = n := by
+  rw [log2_stackOfTuple, Nat.log2_two_pow]
+
+theorem size_stackOfTwoPowTuple {bs : Fin (2^n) → β} : (stackOfTuple bs).size = n + 1 := by
+  rw [size_stackOfTuple, Nat.size_pow]
+
+theorem isMaxed_stackOfPredTwoPowTuple [NeZero n] {bs : Fin (2^n - 1) → β} :
+    (stackOfTuple bs).isMaxed := isMaxed_stackOfTuple_iff_two_pow_sub_one.mpr ⟨_, rfl⟩
+
+theorem log2_stackOfPredTwoPowTuple [NeZero n] {bs : Fin (2^n - 1) → β} :
+    (stackOfTuple bs).log2 = n - 1 := by
+  rw [log2_stackOfTuple, Nat.log2_pred_two_pow]
+
+theorem size_stackOfPredTwoPowTuple {bs : Fin (2^n - 1) → β} [NeZero n] :
+    (stackOfTuple bs).size = n := by
+  rw [size_stackOfTuple, Nat.size_pred_pow]
+
+theorem asdfsdfgddfs  (hp : p.isRoot) {bs : Fin (2^p.log2) → β} :
+    (p.pushTuple bs).last = p.last # (stackOfTuple bs).last := by
+  induction p with | sngl => _ | bit0 p IH => _ | bit1 => _
+  · simp_rw [last_sngl, ← stackOfTuple_cons, stackOfTuple_succ, pushTuple_one, pushTuple_zero,
+      push_sngl, last_bit0, last_sngl, cons_zero, tail_def, cons_succ]
+  · simp at *
+    rw [← IH hp (bs := bs)]
+  · simp at hp
+  /-induction hp generalizing k with | sngl a => _ | bit0 a p => _
+  · simp_rw [log2_sngl, pow_zero] at hk
+    cases hk
+    simp_rw [last_sngl, ← stackOfTuple_cons, stackOfTuple_succ, pushTuple_one, pushTuple_zero,
+      push_sngl, last_bit0, last_sngl, cons_zero, tail_def, cons_succ]
+  · simp at hk
+    simp_rw [last_bit0]
+    rw [← hk]-/
 
 
-theorem twoPowStackOfTuple_eq_sngl_pushTuple :
-    twoPowStackOfTuple bs = (sngl (bs 0)).pushTuple
-    (fun i : Fin (2^n - 1) => bs <|
-    Fin.cast (tsub_add_cancel_of_le Nat.one_le_two_pow) i.succ) := by
-  induction n with | zero => _ | succ n IH => _
-  · rfl
-  · simp_rw [twoPowStackOfTuple_succ, IH, pushTuple_append]
-    refine pushTuple_congr rfl ((Nat.sub_add_comm Nat.one_le_two_pow) ▸
-      (congrArg (· - 1) (Nat.two_pow_succ n).symm)) (funext <| fun i => ?_)
-    simp_rw [Fin.append]
-    cases i using Fin.addCases with | left => _ | right i => _
-    · simp_rw [Fin.addCases_left]
-      rfl
-    · simp_rw [Fin.addCases_right, twoPowSuccTupleDivide_apply, Function.comp_apply,
-        Fin.succ_cast_eq, Fin.cast_trans]
-      congr
-      simp_rw [Fin.ext_iff, concatTwoPow_inr_apply_val, Fin.coe_cast, Fin.val_succ,
-        Fin.coe_natAdd, Nat.add_right_comm _ _ 1, tsub_add_cancel_of_le Nat.one_le_two_pow]
-
-theorem twoPowStackOfTuple_pop_eq_last :
-    (twoPowStackOfTuple bs).pop = (twoPowStackOfTuple bs).last :=
-  pop_eq_last_of_isRoot twoPowStackOfTuple_isRoot
-
-theorem twoPowStackOfTuple_zero_pop {bs : Fin (2^0) → β} :
-  (twoPowStackOfTuple bs).pop = bs 0 := rfl
-
-theorem twoPowStackOfTuple_succ_pop {bs : Fin (2^(n + 1)) → β} :
-    (twoPowStackOfTuple bs).pop =
-    (twoPowStackOfTuple (twoPowSuccTupleDivide bs).1).pop #
-    (twoPowStackOfTuple (twoPowSuccTupleDivide bs).2).pop := by
-  rw [twoPowStackOfTuple_succ, blahj]
-  congr 2
-  · simp
-    apply twoPowStackOfTuple_congr
-    · simp
-    · simp
-  · simp
-  · simp
-
-isRoot_iff_count_eq_two_pow_lg2
- size_count_eq_size
-theorem finalHash_zero (bs : Fin (2^0) → β) :
-  finalHash 0 bs = bs 0 := rfl
-
-theorem finalHash_succ (n : ℕ) (bs : Fin (2^(n + 1)) → β) :
-  finalHash (n + 1) bs =
-  (finalHash n (twoPowSuccTupleDivide bs).1) #
-  (finalHash n (twoPowSuccTupleDivide bs).2) := rfl
-
-end TwoPowStackOfTuple
--/
+end StackOfTuple
 
 end PSharedStack
 
@@ -1215,14 +1288,14 @@ variable {β : Type*} {a b : β} {p : PSharedStack β} {s : SharedStack β}
 instance : Inhabited (SharedStack β) where
   default := emp
 
-def lg2 (s : SharedStack β) : ℕ := s.casesOn 0 (fun p => p.lg2)
+def log2 (s : SharedStack β) : ℕ := s.casesOn 0 (fun p => p.log2)
 
-section Lg2
+section Log2
 
-@[simp] theorem lg2_emp : (emp : SharedStack β).lg2 = 0 := rfl
-@[simp] theorem lg2_pst : (pst p).lg2 = p.lg2 := rfl
+@[simp] theorem log2_emp : (emp : SharedStack β).log2 = 0 := rfl
+@[simp] theorem log2_pst : (pst p).log2 = p.log2 := rfl
 
-end Lg2
+end Log2
 
 def size (s : SharedStack β) : ℕ := s.casesOn 0 (fun p => p.size)
 
@@ -1239,7 +1312,7 @@ section Size
 
 @[simp] theorem one_le_size_pos : 1 ≤ (pst p).size := p.size_pos
 
-theorem lg2_eq_size_pred : s.lg2 = s.size - 1 := s.casesOn rfl (fun _ => rfl)
+theorem log2_eq_size_pred : s.log2 = s.size - 1 := s.casesOn rfl (fun _ => rfl)
 
 end Size
 
@@ -1281,13 +1354,13 @@ theorem count_lt_two_pow_size : s.count < 2^s.size := by
   · exact Nat.size_zero
   · exact p.size_count_eq_size
 
-@[simp] theorem log_two_count_eq_lg2 : Nat.log 2 s.count = s.lg2 := by
+@[simp] theorem log_two_count_eq_log2 : Nat.log 2 s.count = s.log2 := by
   cases s with | emp => _ | pst p => _
-  · simp_rw [count_emp, Nat.log_zero_right, lg2_emp]
-  · exact p.log_two_count_eq_lg2
+  · simp_rw [count_emp, Nat.log_zero_right, log2_emp]
+  · exact p.log_two_count_eq_log2
 
-@[simp] theorem log2_count_eq_lg2 : s.count.log2 = s.lg2 := by
-  rw [Nat.log2_eq_log_two, log_two_count_eq_lg2]
+@[simp] theorem log2_count_eq_log2 : s.count.log2 = s.log2 := by
+  rw [Nat.log2_eq_log_two, log_two_count_eq_log2]
 
 end Count
 
@@ -1300,9 +1373,9 @@ section SizeCap
 @[simp] theorem sizeCap_emp : (emp : SharedStack β).sizeCap = 0 := rfl
 @[simp] theorem sizeCap_bit0 : (pst p).sizeCap = p.sizeCap := rfl
 
-theorem sizeCap_lt_pred_two_pow_size : s.sizeCap ≤ 2^(s.lg2) - 1 := by
+theorem sizeCap_lt_pred_two_pow_size : s.sizeCap ≤ 2^(s.log2) - 1 := by
   cases s with | emp => _ | pst p => _
-  · simp_rw [sizeCap_emp, lg2_emp, zero_le]
+  · simp_rw [sizeCap_emp, log2_emp, zero_le]
   · exact p.sizeCap_lt_pred_two_pow_size
 
 theorem count_add_sizeCap_eq_pred_two_pow_size : s.count + s.sizeCap = 2^s.size - 1 := by
@@ -1327,7 +1400,7 @@ theorem one_le_sizeInc : 1 ≤ s.sizeInc := Nat.one_le_iff_ne_zero.mpr sizeInc_n
 
 theorem sizeInc_eq_sizeCap_succ : s.sizeInc = s.sizeCap + 1 := rfl
 
-theorem sizeInc_lt_two_pow_size : s.sizeInc ≤ 2^s.lg2 := by
+theorem sizeInc_lt_two_pow_size : s.sizeInc ≤ 2^s.log2 := by
   rw [sizeInc_eq_sizeCap_succ]
   exact Nat.add_le_of_le_sub Nat.one_le_two_pow sizeCap_lt_pred_two_pow_size
 
@@ -1378,27 +1451,17 @@ section IsRoot
 
 @[simp] theorem isRoot_pst_iff : (pst p).isRoot ↔ p.isRoot := Iff.rfl
 
-theorem isRoot_iff_count_eq_two_pow_lg2 :
-    s.isRoot ↔ s.count = 2^s.lg2 := s.casesOn
-  (iff_of_false not_isRoot_emp zero_ne_one) (fun p => p.isRoot_iff_count_eq_two_pow_lg2)
+theorem isRoot_iff_count_eq_two_pow_log2 :
+    s.isRoot ↔ s.count = 2^s.log2 := s.casesOn
+  (iff_of_false not_isRoot_emp zero_ne_one) (fun p => p.isRoot_iff_count_eq_two_pow_log2)
 
 instance : Decidable (s.isRoot) :=
-  decidable_of_iff _ isRoot_iff_count_eq_two_pow_lg2.symm
-
-theorem isRoot_iff_toList_eq_replicate_size_pred_append_singleton :
-    s.isRoot ↔ ∃ (h : s.count ≠ 0), s.toList =
-    List.replicate s.lg2 none ++ [some (s.pop h)] := by
-  cases s with | emp => _ | pst p => _
-  · simp_rw [count_emp, not_isRoot_emp, false_iff, not_exists]
-    exact fun h => h.irrefl.elim
-  · haveI : Nonempty _ := ⟨p.count_ne_zero⟩
-    simp_rw [isRoot_pst_iff, isRoot_iff_toList_eq_replicate_size_pred_append_singleton, count_pst]
-    exact (exists_const _).symm
+  decidable_of_iff _ isRoot_iff_count_eq_two_pow_log2.symm
 
 theorem isRoot_iff_exists_size_eq_two_pow : s.isRoot ↔ ∃ k, s.count = 2^k := by
-  rw [isRoot_iff_count_eq_two_pow_lg2]
+  rw [isRoot_iff_count_eq_two_pow_log2]
   refine ⟨fun h => ⟨_, h⟩, fun ⟨k, hk⟩ => ?_⟩
-  have H := hk ▸ s.log_two_count_eq_lg2
+  have H := hk ▸ s.log_two_count_eq_log2
   rw [Nat.log_pow one_lt_two] at H
   exact H ▸ hk
 
@@ -1583,18 +1646,18 @@ theorem size_pushTuple_of_le_sizeCap (hk : k ≤ s.sizeCap) : (s.pushTuple bs).s
 theorem size_pushTuple_sizeCap {bs : Fin k → β} (hk : k = s.sizeCap) :
     (s.pushTuple bs).size = s.size := size_pushTuple_of_le_sizeCap hk.le
 
-theorem lg2_pushTuple_of_lt_sizeInc (hk : k < s.sizeInc) : (s.pushTuple bs).lg2 = s.lg2 := by
+theorem log2_pushTuple_of_lt_sizeInc (hk : k < s.sizeInc) : (s.pushTuple bs).log2 = s.log2 := by
   cases s with | emp => _ | pst p => _
   · simp_rw [sizeInc_emp, Nat.lt_one_iff] at hk
     cases hk
     simp_rw [pushTuple_zero]
-  · exact p.lg2_pushTuple_of_lt_sizeInc hk
+  · exact p.log2_pushTuple_of_lt_sizeInc hk
 
-theorem lg2_pushTuple_of_le_sizeCap (hk : k ≤ s.sizeCap) : (s.pushTuple bs).lg2 = s.lg2 :=
-  lg2_pushTuple_of_lt_sizeInc (Nat.lt_succ_of_le hk)
+theorem log2_pushTuple_of_le_sizeCap (hk : k ≤ s.sizeCap) : (s.pushTuple bs).log2 = s.log2 :=
+  log2_pushTuple_of_lt_sizeInc (Nat.lt_succ_of_le hk)
 
-theorem lg2_pushTuple_sizeCap {bs : Fin k → β} (hk : k = s.sizeCap) :
-    (s.pushTuple bs).lg2 = s.lg2 := lg2_pushTuple_of_le_sizeCap hk.le
+theorem log2_pushTuple_sizeCap {bs : Fin k → β} (hk : k = s.sizeCap) :
+    (s.pushTuple bs).log2 = s.log2 := log2_pushTuple_of_le_sizeCap hk.le
 
 theorem isMaxed_pushTuple_sizeCap {bs : Fin k → β} (hk : k = s.sizeCap) :
     (s.pushTuple bs).isMaxed := by
@@ -1615,34 +1678,41 @@ theorem size_pushTuple_sizeInc {bs : Fin k → β} (hk : k = s.sizeInc) :
   · rw [pushTuple_succ_last, size_push_of_isMaxed (isMaxed_pushTuple_sizeCap rfl),
       size_pushTuple_sizeCap rfl]
 
-theorem pushTuple_two_pow_lg2_isRoot_of_isRoot (hs : s.isRoot) {bs : Fin k → β}
-    (hk : k = 2^s.lg2) : (s.pushTuple bs).isRoot := by
+theorem pushTuple_two_pow_log2_isRoot_of_isRoot (hs : s.isRoot) {bs : Fin k → β}
+    (hk : k = 2^s.log2) : (s.pushTuple bs).isRoot := by
   cases s with | emp => _ | pst p => _
   · exact (not_isRoot_emp hs).elim
-  · exact p.pushTuple_two_pow_lg2_isRoot_of_isRoot hs hk
+  · exact p.pushTuple_two_pow_log2_isRoot_of_isRoot hs hk
 
-theorem lg2_pushTuple_two_pow_lg2_eq_succ_of_isRoot (hs : s.isRoot) {bs : Fin k → β}
-    (hk : k = 2^s.lg2) : (s.pushTuple bs).lg2 = s.lg2 + 1 := by
+theorem log2_pushTuple_two_pow_log2_eq_succ_of_isRoot (hs : s.isRoot) {bs : Fin k → β}
+    (hk : k = 2^s.log2) : (s.pushTuple bs).log2 = s.log2 + 1 := by
   cases s with | emp => _ | pst p => _
   · exact (not_isRoot_emp hs).elim
-  · exact p.lg2_pushTuple_two_pow_lg2_eq_succ_of_isRoot hs hk
+  · exact p.log2_pushTuple_two_pow_log2_eq_succ_of_isRoot hs hk
 
-theorem size_pushTuple_two_pow_lg2_eq_succ_of_isRoot (hs : s.isRoot) {bs : Fin k → β}
-    (hk : k = 2^s.lg2) :
+theorem size_pushTuple_two_pow_log2_eq_succ_of_isRoot (hs : s.isRoot) {bs : Fin k → β}
+    (hk : k = 2^s.log2) :
     (s.pushTuple bs).size = s.size + 1 := by
   cases s with | emp => _ | pst p => _
   · exact (not_isRoot_emp hs).elim
-  · exact p.size_pushTuple_two_pow_lg2_eq_succ_of_isRoot hs hk
+  · exact p.size_pushTuple_two_pow_log2_eq_succ_of_isRoot hs hk
 
 end PushTuple
 
-def stackOfTuple [Hash β] (bs : Fin k → β) : SharedStack β := emp.pushTuple bs
+def stackOfTuple [Hash β] : (bs : Fin k → β) → SharedStack β :=
+  k.casesOn (fun _ => emp) (fun _ bs => pst (PSharedStack.stackOfTuple bs))
 
 section StackOfTuple
 
 open Fin
 
 variable {n m k : ℕ} {bs : Fin k → β} [Hash β]
+
+theorem stackOfTuple_of_ne_zero [NeZero k] :
+    stackOfTuple bs = pst (PSharedStack.stackOfTuple bs) := by
+  cases k
+  · exact (NeZero.ne 0 rfl).elim
+  · rfl
 
 @[simp] theorem stackOfTuple_zero {bs : Fin 0 → β} : stackOfTuple bs = emp := rfl
 
@@ -1651,54 +1721,116 @@ variable {n m k : ℕ} {bs : Fin k → β} [Hash β]
 theorem stackOfTuple_succ {bs : Fin (k + 1) → β} :
   stackOfTuple bs = (pst (sngl (bs 0))).pushTuple (Fin.tail bs) := rfl
 
+theorem stackOfTuple_eq_pushTuple (bs : Fin k → β): stackOfTuple bs = emp.pushTuple bs := rfl
+
 theorem stackOfTuple_succ_last {bs : Fin (k + 1) → β} :
-    stackOfTuple bs = (stackOfTuple (Fin.init bs)).push (bs (Fin.last k)) := pushTuple_succ_last
+    stackOfTuple bs = (stackOfTuple (Fin.init bs)).push (bs (Fin.last k)) :=
+  stackOfTuple_eq_pushTuple bs ▸ pushTuple_succ_last
 
 theorem stackOfTuple_add (bs : Fin (m + n) → β) :
     stackOfTuple bs = (stackOfTuple fun i => bs (Fin.castAdd n i)).pushTuple
-    fun i => bs (Fin.natAdd m i) := pushTuple_add
+    fun i => bs (Fin.natAdd m i) := stackOfTuple_eq_pushTuple bs ▸ pushTuple_add
 
-theorem stackOfTuple_cons : stackOfTuple (cons b bs) = (pst (sngl b)).pushTuple bs := pushTuple_cons
+theorem stackOfTuple_cons : stackOfTuple (cons b bs) = (pst (sngl b)).pushTuple bs :=
+  stackOfTuple_eq_pushTuple (cons b bs) ▸ pushTuple_cons
 
-theorem stackOfTuple_snoc : stackOfTuple (snoc bs b) = (stackOfTuple bs).push b := pushTuple_snoc
+theorem stackOfTuple_snoc : stackOfTuple (snoc bs b) = (stackOfTuple bs).push b :=
+  stackOfTuple_eq_pushTuple (snoc bs b) ▸ pushTuple_snoc
 
-theorem stackOfTuple_append {bs₁ : Fin m → β} {bs₂ : Fin n → β} : (stackOfTuple bs₁).pushTuple bs₂ =
-    stackOfTuple (append bs₁ bs₂) := pushTuple_append
+theorem stackOfTuple_append {bs₁ : Fin m → β} {bs₂ : Fin n → β} :
+    (stackOfTuple bs₁).pushTuple bs₂ = stackOfTuple (append bs₁ bs₂) :=
+  stackOfTuple_eq_pushTuple bs₁ ▸ stackOfTuple_eq_pushTuple (append bs₁ bs₂) ▸ pushTuple_append
 
-theorem count_stackOfTuple : (stackOfTuple bs).count = k := by
-  unfold stackOfTuple
+@[simp] theorem count_stackOfTuple : (stackOfTuple bs).count = k := by
+  rw [stackOfTuple_eq_pushTuple]
   simp_rw [count_pushTuple, count_emp, zero_add]
 
-theorem lg2_stackOfTuple : (stackOfTuple bs).lg2 = k.log2 :=
-  (stackOfTuple bs).log2_count_eq_lg2 ▸ (congrArg _ count_stackOfTuple)
+@[simp] theorem log2_stackOfTuple : (stackOfTuple bs).log2 = k.log2 :=
+  (stackOfTuple bs).log2_count_eq_log2 ▸ (congrArg _ count_stackOfTuple)
 
-theorem size_stackOfTuple : (stackOfTuple bs).size = k.size :=
+@[simp] theorem size_stackOfTuple : (stackOfTuple bs).size = k.size :=
   (stackOfTuple bs).size_count_eq_size ▸ (congrArg _ count_stackOfTuple)
 
-theorem isRoot_stackOfTuple_iff_two_pow {bs : Fin k → β} :
+theorem isRoot_stackOfTuple_iff_two_pow :
     (stackOfTuple bs).isRoot ↔ ∃ n, k = 2^n := by
-  rw [isRoot_iff_count_eq_two_pow_lg2, count_stackOfTuple, lg2_stackOfTuple]
+  rw [isRoot_iff_count_eq_two_pow_log2, count_stackOfTuple, log2_stackOfTuple]
   exact ⟨fun h => ⟨_, h⟩, fun ⟨_, h⟩ => h ▸ Nat.log2_two_pow ▸ rfl⟩
 
-/-
-theorem twoPowStackOfTuple_count : (twoPowStackOfTuple bs).count = 2^n := by
-  induction n with | zero => _ | succ n IH => _
-  · rfl
-  · simp_rw [twoPowStackOfTuple_succ, count_pushTuple, IH, pow_succ', two_mul]
+theorem isMaxed_stackOfTuple_iff_two_pow_sub_one :
+    (stackOfTuple bs).isMaxed ↔ ∃ n, k = 2^n - 1 := by
+  rw [isMaxed_iff_count_eq_pred_two_pow_size, count_stackOfTuple, size_stackOfTuple]
+  exact ⟨fun h => ⟨_, h⟩, fun ⟨_, h⟩ => h ▸ Nat.size_pred_pow ▸ rfl⟩
 
-@[simp] theorem twoPowStackOfTuple_lg2 : (twoPowStackOfTuple bs).lg2 = n :=
-  (Nat.log2_two_pow ▸ twoPowStackOfTuple_count (bs := bs) ▸
-    (twoPowStackOfTuple bs).log2_count_eq_lg2).symm
+@[simp] theorem stackOfTwoPowTuple_zero {bs : Fin (2^0) → β} :
+    stackOfTuple bs = pst (sngl (bs 0)) := rfl
 
-@[simp] theorem twoPowStackOfTuple_size : (twoPowStackOfTuple bs).size = n + 1 := by
-  rw [size_eq_lg2_succ, twoPowStackOfTuple_lg2]
+@[simp] theorem stackOfTwoPowTuple_succ {bs : Fin (2^(n + 1)) → β} :
+    stackOfTuple bs = (stackOfTuple (twoPowSuccTupleDivide bs).1).pushTuple
+    (twoPowSuccTupleDivide bs).2 := by
+  simp_rw [stackOfTuple_eq_pushTuple, pushTuple_two_pow_succ]
 
-@[simp] theorem twoPowStackOfTuple_isRoot : (twoPowStackOfTuple bs).isRoot := by
-  rw [isRoot_iff_count_eq_two_pow_lg2, twoPowStackOfTuple_count, twoPowStackOfTuple_lg2]
--/
+theorem isRoot_stackOfTwoPowTuple {bs : Fin (2^n) → β} : (stackOfTuple bs).isRoot :=
+  isRoot_stackOfTuple_iff_two_pow.mpr ⟨_, rfl⟩
+
+theorem count_stackOfTwoPowTuple_pos {bs : Fin (2^n) → β} : 0 < (stackOfTuple bs).count := by
+  rw [count_stackOfTuple]
+  exact Nat.two_pow_pos _
+
+theorem count_stackOfTwoPowTuple_ne {bs : Fin (2^n) → β} : (stackOfTuple bs).count ≠ 0 :=
+  count_stackOfTwoPowTuple_pos.ne'
+
+theorem log2_stackOfTwoPowTuple {bs : Fin (2^n) → β} : (stackOfTuple bs).log2 = n := by
+  rw [log2_stackOfTuple, Nat.log2_two_pow]
+
+theorem size_stackOfTwoPowTuple {bs : Fin (2^n) → β} : (stackOfTuple bs).size = n + 1 := by
+  rw [size_stackOfTuple, Nat.size_pow]
+
+theorem isMaxed_stackOfPredTwoPowTuple {bs : Fin (2^n - 1) → β} : (stackOfTuple bs).isMaxed :=
+  isMaxed_stackOfTuple_iff_two_pow_sub_one.mpr ⟨_, rfl⟩
+
+theorem log2_stackOfPredTwoPowTuple {bs : Fin (2^n - 1) → β} : (stackOfTuple bs).log2 = n - 1 := by
+  rw [log2_stackOfTuple, Nat.log2_pred_two_pow]
+
+theorem size_stackOfPredTwoPowTuple {bs : Fin (2^n - 1) → β} : (stackOfTuple bs).size = n := by
+  rw [size_stackOfTuple, Nat.size_pred_pow]
 
 end StackOfTuple
 
+def finalHash [Hash β] (bs : Fin (2^n) → β) : β :=
+  (stackOfTuple bs).last count_stackOfTwoPowTuple_ne
+
+section FinalHash
+
+variable [Hash β]
+
+theorem finalHash_zero (bs : Fin (2^0) → β) : finalHash bs = bs 0 := rfl
+
+theorem finalHash_succ (bs : Fin (2^(n + 1)) → β) : finalHash bs =
+    (finalHash (twoPowSuccTupleDivide bs).1) #
+    (finalHash (twoPowSuccTupleDivide bs).2) := by
+  unfold finalHash
+  induction n
+  · rfl
+  · simp_rw [stackOfTwoPowTuple_succ (bs := bs)]
+
+end FinalHash
+
+/-
+def finalHash : {n : ℕ} → (Fin (2^n) → β) → β
+  | 0, t => t 0
+  | (n + 1), t =>
+    let (f, l) := twoPowSuccTupleDivide t
+    (finalHash n f) # (finalHash n l)
+
+theorem finalHash_zero (bs : Fin (2^0) → β) :
+  finalHash 0 bs = bs 0 := rfl
+
+theorem finalHash_succ (n : ℕ) (bs : Fin (2^(n + 1)) → β) :
+  finalHash (n + 1) bs =
+  (finalHash n (twoPowSuccTupleDivide bs).1) #
+  (finalHash n (twoPowSuccTupleDivide bs).2) := rfl
+
+-/
 
 #eval (bit0 (sngl 5324))
 

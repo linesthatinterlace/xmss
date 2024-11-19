@@ -270,13 +270,13 @@ theorem concatTwoPow_inl_apply_val {i : Fin (2^n)} : (concatTwoPow (Sum.inl i)).
 @[simp]
 theorem concatTwoPow_inr_apply_val {i : Fin (2^n)} : (concatTwoPow (Sum.inr i)).val = 2^n + i := rfl
 
-theorem concatTwoPow_symm_apply_of_lt (i : Fin (2^(n + 1))) (h : (i : ℕ) < 2^n) :
+theorem concatTwoPow_symm_apply_of_lt {i : Fin (2^(n + 1))} (h : (i : ℕ) < 2^n) :
     concatTwoPow.symm i = Sum.inl ⟨i, h⟩ := by
   simp_rw [Equiv.symm_apply_eq, Fin.ext_iff, concatTwoPow_inl_apply_val]
 
-theorem concatTwoPow_symm_apply_of_ge (i : Fin (2^(n + 1))) (h : 2^n ≤ (i : ℕ)) :
+theorem concatTwoPow_symm_apply_of_ge {i : Fin (2^(n + 1))} (h : 2^n ≤ (i : ℕ)) :
     concatTwoPow.symm i = Sum.inr ⟨i - 2^n,
-    Nat.sub_lt_right_of_lt_add h (Nat.two_pow_succ _ ▸ i.isLt)⟩ := by
+    Nat.sub_lt_right_of_lt_add h (i.isLt.trans_eq (Nat.two_pow_succ _))⟩ := by
   simp_rw [Equiv.symm_apply_eq, Fin.ext_iff, concatTwoPow_inr_apply_val, Nat.add_sub_cancel' h]
 
 def interleveTwoPow : Fin (2 ^ n) ⊕ Fin (2 ^ n) ≃ Fin (2 ^ (n + 1)) where
@@ -336,6 +336,200 @@ theorem concatTwoPow_inr_interleveTwoPow_inl :
   simp only [Fin.ext_iff, concatTwoPow_inr_apply_val, interleveTwoPow_inl_apply_val,
     mul_add, pow_succ']
 
+@[simp] theorem Fin.val_top [NeZero n] : (⊤ : Fin n).1 = n - 1 := rfl
+
+@[simp] theorem Fin.top_eq_cast_last [NeZero n] : (⊤ : Fin n) =
+    Fin.cast (Nat.sub_add_cancel NeZero.one_le) (last (n - 1)) := rfl
+
+@[simp] theorem Fin.top_eq_mk_sub_one [NeZero n] : (⊤ : Fin n) =
+  ⟨n - 1, Nat.sub_one_lt <| NeZero.ne _⟩ := rfl
+
+theorem Nat.two_pow_le_sub_one_two_pow_succ : 2^n ≤ 2^(n + 1) - 1 :=
+  (le_pred_iff_lt (Nat.two_pow_pos _)).mpr (Nat.pow_lt_pow_succ one_lt_two)
+
+theorem Nat.sub_one_two_pow_succ_sub_two_pow : 2^(n + 1) - 1 - 2 ^ n = 2^n - 1 := by
+  rw [pow_succ', two_mul, Nat.sub_right_comm, Nat.add_sub_cancel]
+
+def twoPowEquivSigmaSumUnit : {n : ℕ} → Fin (2 ^ n) ≃ (Σ (i : Fin n), Fin (2^(i : ℕ))) ⊕ Unit
+  | 0 =>
+    { toFun := fun i => Sum.inr (),
+      invFun := fun i => i.casesOn (fun i => i.1.elim0) (fun _ => 0),
+      left_inv := fun i => by
+        simp_rw [Nat.pow_zero]
+        exact (Fin.fin_one_eq_zero _).symm,
+      right_inv := fun i => by
+        cases i with | inl i => _ | inr => _
+        · exact i.1.elim0
+        · rfl}
+  | (n + 1) => concatTwoPow.symm.trans <|
+    (Equiv.sumCongr (Equiv.refl _) twoPowEquivSigmaSumUnit).trans <|
+    (Equiv.sumAssoc _ _ _).symm.trans <|
+    (Equiv.sumCongr {
+      toFun := Sum.elim (fun x => ⟨Fin.last n, x⟩) (fun ⟨i, x⟩ => ⟨i.castSucc, x⟩)
+      invFun := fun i => i.casesOn
+        fun j => j.lastCases Sum.inl fun j x => Sum.inr ⟨j, x⟩
+      left_inv := fun i => by
+        rcases i with (x | ⟨i, x⟩)
+        · simp_rw [Sum.elim_inl, Fin.lastCases_last]
+        · simp_rw [Sum.elim_inr, Fin.lastCases_castSucc]
+      right_inv := fun ⟨i, x⟩ => by
+        cases i using Fin.lastCases with | last => _ | cast => _
+        · simp_rw [Fin.lastCases_last, Sum.elim_inl]
+        · simp_rw [Fin.lastCases_castSucc, Sum.elim_inr]} (Equiv.refl _))
+
+theorem twoPowEquivSigmaSumUnit_zero_apply {i : Fin (2^0)} :
+    twoPowEquivSigmaSumUnit i = (Sum.inr ()) := rfl
+
+theorem twoPowEquivSigmaSumUnit_zero_symm_apply :
+    twoPowEquivSigmaSumUnit (n := 0).symm (Sum.inr ()) = 0 := rfl
+
+theorem twoPowEquivSigmaSumUnit_succ_apply {i : Fin (2^(n + 1))}:
+    twoPowEquivSigmaSumUnit i = (concatTwoPow.symm i).elim (fun i => Sum.inl ⟨Fin.last n, i⟩)
+    (fun i => (twoPowEquivSigmaSumUnit i).elim
+    (fun i => Sum.inl ⟨i.fst.castSucc, i.snd⟩)
+    (fun () => Sum.inr ())) := by
+  nth_rewrite 1 [twoPowEquivSigmaSumUnit]
+  simp_rw [Equiv.trans_apply, Equiv.sumCongr_apply, Sum.map, Equiv.sumAssoc, Function.comp_def,
+    Equiv.refl_apply, Equiv.coe_fn_symm_mk, Equiv.coe_fn_mk]
+  rcases lt_or_le (i : ℕ) (2^n : ℕ) with hi | hi
+  · simp_rw [concatTwoPow_symm_apply_of_lt hi, Sum.elim_inl]
+  · simp_rw [concatTwoPow_symm_apply_of_ge hi, Sum.elim_inr]
+    cases twoPowEquivSigmaSumUnit _
+    · simp_rw [Sum.elim_inl, Sum.elim_inr]
+    · simp_rw [Sum.elim_inr]
+
+theorem twoPowEquivSigmaSumUnit_succ_apply_of_lt {i : ℕ} (hi : i < 2^n) :
+    twoPowEquivSigmaSumUnit ⟨i, hi.trans (Nat.pow_lt_pow_succ one_lt_two)⟩ =
+    Sum.inl ⟨Fin.last n, ⟨i, hi⟩⟩ := by
+  rw [twoPowEquivSigmaSumUnit_succ_apply, concatTwoPow_symm_apply_of_lt hi, Sum.elim_inl]
+
+theorem twoPowEquivSigmaSumUnit_succ_apply_of_ge {i : ℕ} {hi₀ : i < 2^ (n + 1)}
+    (hi₁ : 2^n ≤ i) : twoPowEquivSigmaSumUnit ⟨i, hi₀⟩ =
+    (twoPowEquivSigmaSumUnit ⟨i - 2^n,
+      Nat.sub_lt_right_of_lt_add hi₁ (hi₀.trans_eq (Nat.two_pow_succ _))⟩).elim
+      (fun i => Sum.inl ⟨i.fst.castSucc, i.snd⟩)
+      (fun () => Sum.inr ()) := by
+  rw [twoPowEquivSigmaSumUnit_succ_apply, concatTwoPow_symm_apply_of_ge hi₁, Sum.elim_inr]
+
+theorem twoPowEquivSigmaSumUnit_succ_apply_of_eq (hi : i = 2^n - 1) :
+    twoPowEquivSigmaSumUnit ⟨i, hi ▸ Nat.sub_one_lt (Nat.two_pow_pos _).ne'⟩ = Sum.inr () := by
+  cases hi
+  induction n with | zero => _ | succ n IH => _
+  · exact twoPowEquivSigmaSumUnit_zero_apply
+  · simp_rw [twoPowEquivSigmaSumUnit_succ_apply_of_ge
+      Nat.two_pow_le_sub_one_two_pow_succ, Nat.sub_one_two_pow_succ_sub_two_pow, IH, Sum.elim_inr]
+
+theorem twoPowEquivSigmaSumUnit_apply_top :
+    twoPowEquivSigmaSumUnit (⊤ : Fin (2^n)) = Sum.inr () :=
+  twoPowEquivSigmaSumUnit_succ_apply_of_eq rfl
+
+theorem twoPowEquivSigmaSumUnit_isLeft_of_lt {i : ℕ} (hi : i < 2^n - 1) :
+    (twoPowEquivSigmaSumUnit ⟨i, Nat.lt_of_lt_pred hi⟩).isLeft := by
+  induction n generalizing i with | zero => _ | succ n IH => _
+  · simp_rw [pow_zero, Nat.sub_self, not_lt_zero'] at hi
+  · rcases lt_or_le i (2 ^ n) with hi' | hi'
+    · rw [twoPowEquivSigmaSumUnit_succ_apply_of_lt hi', Sum.isLeft_inl]
+    · rw [twoPowEquivSigmaSumUnit_succ_apply_of_ge hi']
+      simp_rw [Sum.isLeft_iff] at IH
+      rcases IH (Nat.sub_lt_left_of_lt_add hi'
+        ((Nat.add_sub_assoc Nat.one_le_two_pow _) ▸ Nat.two_mul _ ▸ pow_succ' 2 _ ▸ hi))
+        with ⟨j, hj⟩
+      simp_rw [hj, Sum.elim_inl, Sum.isLeft_inl]
+
+theorem twoPowEquivSigmaSumUnit_isRight_of_eq {i : ℕ} (hi : i = 2^n - 1) :
+    (twoPowEquivSigmaSumUnit ⟨i, hi ▸ Nat.sub_one_lt (Nat.two_pow_pos _).ne'⟩).isRight := by
+  rw [twoPowEquivSigmaSumUnit_succ_apply_of_eq hi, Sum.isRight_inr]
+
+theorem twoPowEquivSigmaSumUnit_isLeft_iff_lt {i : Fin (2^n)} :
+    (twoPowEquivSigmaSumUnit i).isLeft ↔ (i : ℕ) < 2^n - 1 := by
+  refine ⟨Function.mtr ?_, twoPowEquivSigmaSumUnit_isLeft_of_lt⟩
+  simp_rw [not_lt, le_iff_eq_or_lt, (Nat.le_sub_one_of_lt i.isLt).not_lt, or_false,
+    Bool.not_eq_true, Sum.isLeft_eq_false, eq_comm (b := (i : ℕ))]
+  exact twoPowEquivSigmaSumUnit_isRight_of_eq
+
+theorem blahj {i k : ℕ} (hk : k < n + 1)
+    (hi₁ : i + 2 ^ k < 2 ^ (n + 1)) (hi₂ : 2 ^ (n + 1) ≤ i + 2 ^ (k + 1)) :
+    (twoPowEquivSigmaSumUnit (⟨i, Nat.lt_of_lt_pred
+    ((Nat.lt_add_of_pos_right (Nat.two_pow_pos k)).trans_le (Nat.le_pred_of_lt hi₁))⟩)) =
+    Sum.inl ⟨⟨k, hk⟩,
+      ⟨i + 2^(k + 1) - 2^(n + 1), by
+        refine Nat.sub_lt_left_of_lt_add hi₂ ?_
+        rw [pow_succ' _ k, two_mul, ← add_assoc, add_lt_add_iff_right]
+        exact hi₁⟩⟩ := by
+  induction n generalizing k i with | zero => _ | succ n IH => _
+  · simp_rw [zero_add, Nat.lt_one_iff] at hk
+    subst hk
+    exact twoPowEquivSigmaSumUnit_succ_apply_of_lt _
+  · rcases lt_or_le i (2 ^ n) with (hi | hi)
+
+
+
+/-
+
+        simp_rw [Nat.sub_sub]
+        apply Nat.sub_lt_left_of_lt_add _ _
+        apply Nat.sub_one_lt_of_le (Nat.sub_pos_of_lt hi.1)
+        rw [Nat.sub_le_iff_le_add, add_comm (2^k), add_assoc, ← two_mul, ← pow_succ']
+        exact hi.2⟩
+-/
+
+theorem twoPowEquivSigmaSumUnit_succ_apply_of_ge' {i : ℕ}
+  (f : {n : ℕ} → (j : Fin (2^(n + 1))) → (i : Fin (n + 1)) × Fin (2 ^ (i : ℕ)))
+    (hi₀ : 2^n ≤ i) (hi₁ : i < 2^(n + 1) - 1) :
+    twoPowEquivSigmaSumUnit ⟨i, Nat.lt_of_lt_pred hi₁⟩ = Sum.inl (f i) := by
+  induction n generalizing i with | zero => _ | succ n IH => _
+  · simp at hi₁
+    simp at hi₀
+    rw [hi₁] at hi₀
+    exact (zero_lt_one.not_le hi₀).elim
+  · simp_rw [twoPowEquivSigmaSumUnit_succ_apply_of_ge hi₀]
+    rcases lt_or_le ((i : ℕ) - 2 ^ (n + 1)) (2 ^ n) with hi₂ | hi₂
+    · simp_rw [twoPowEquivSigmaSumUnit_succ_apply_of_lt hi₂, Sum.elim_inl,
+      Sum.inl.injEq]
+      sorry
+    · have H := IH hi₂ (Nat.sub_lt_left_of_lt_add hi₀ (Nat.add_sub_assoc
+        (Nat.one_le_two_pow) _ ▸ Nat.two_mul _ ▸ pow_succ' 2 _ ▸ hi₁))
+      rw [H, Sum.elim_inl, Sum.inl.injEq]
+    rw [IH, Sum.elim_inl, Sum.inl.injEq]
+    · sorry
+    · simp
+    · simp?
+
+
+
+/-
+(twoPowEquivSigmaSumUnit ⟨i - 2^n,
+      Nat.sub_lt_right_of_lt_add hi (i.isLt.trans_eq (Nat.two_pow_succ _))⟩)
+
+(fun i => Sum.inl ⟨i.fst.castSucc, i.snd⟩)
+
+-/
+theorem twoPowEquivSigmaSumUnit_succ_apply_last :
+    twoPowEquivSigmaSumUnit (n := n) ⊤ = Sum.inr () := by
+  induction n with | zero => _ | succ n IH => _
+  · exact twoPowEquivSigmaSumUnit_zero_apply
+  · simp_rw [twoPowEquivSigmaSumUnit_succ_apply_of_ge (i := ⊤) Nat.two_pow_le_sub_one_two_pow_succ,
+      Fin.val_top, Nat.sub_one_two_pow_succ_sub_two_pow, ← Fin.top_eq_mk_sub_one, IH, Sum.elim_inr]
+
+theorem twoPowEquivSigmaSumUnit_succ_apply {i : Fin (2^(n + 1))} (hi : (i : ℕ) < 2^n) :
+    twoPowEquivSigmaSumUnit i = Sum.inl ⟨Fin.last n, ⟨i, hi⟩⟩ := by
+  unfold twoPowEquivSigmaSumUnit
+  simp_rw [Equiv.trans_apply, concatTwoPow_symm_apply_of_lt hi,
+    Equiv.sumCongr_apply, Sum.map_inl, Equiv.refl_apply, Equiv.sumAssoc_symm_apply_inl,
+    Equiv.coe_fn_mk, Sum.map_inl, Sum.elim_inl]
+
+theorem twoPowEquivSigmaSumUnit_succ_apply' {i : Fin (2^(n + 1))} (hk : k ≤ n)
+  (hi₁ : 2^(n + 1) - 2^(k + 1) ≤ (i : ℕ)) (hi₂ : (i : ℕ) < 2^(n + 1) - 2^k) :
+    twoPowEquivSigmaSumUnit i = Sum.inl ⟨⟨k, Nat.lt_succ_of_le hk⟩,
+    ⟨i - (2 ^ (n + 1) - 2 ^ (k + 1)), Nat.sub_lt_left_of_lt_add hi₁ (hi₂.trans_eq <|
+    (Nat.sub_add_sub_cancel (Nat.pow_le_pow_of_le_right zero_lt_two (Nat.succ_le_succ hk))
+    (Nat.pow_lt_pow_succ one_lt_two).le).symm.trans
+    (by simp_rw [pow_succ' _ k, two_mul,Nat.add_sub_cancel]))⟩⟩ := by
+  unfold twoPowEquivSigmaSumUnit
+  simp_rw [Equiv.trans_apply, concatTwoPow_symm_apply_of_lt hi,
+    Equiv.sumCongr_apply, Sum.map_inl, Equiv.refl_apply, Equiv.sumAssoc_symm_apply_inl,
+    Equiv.coe_fn_mk, Sum.map_inl, Sum.elim_inl]
+
 @[simps!]
 def twoPowSuccTupleDivide : (Fin (2 ^ (n + 1)) → β) ≃ (Fin (2 ^ n) → β) × (Fin (2 ^ n) → β) where
   toFun t := ⟨fun i => t (concatTwoPow (Sum.inl i)), fun i => t (concatTwoPow (Sum.inr i))⟩
@@ -380,46 +574,122 @@ theorem Fin.tuple_foldl_two_pow_succ (bs : Fin (2 ^ (n + 1)) → β) (f : α →
   simp_rw [tuple_foldl_append, append_eq_twoPowSuccTuple_symm,
     Prod.mk.eta, Equiv.symm_apply_apply, tuple_foldl_cast]
 
+attribute [-instance] Fin.completeLinearOrder in
+@[simps!]
+def twoPowTuples : (Fin (2 ^ n) → β) ≃ ((i : Fin n) → Fin (2^(i : ℕ)) → β) × β where
+  toFun t := ⟨fun i s => t _, t ⊤⟩
+  invFun t i := _
+  left_inv t := _
+  right_inv t := _
+
 class Hash (β : Type u) where
   hash : β → β → β
 
 infixl:65 " # " => Hash.hash
 
-inductive BTree (β : Type*) where
-  | leaf : β → BTree β
-  | node : β → BTree β → BTree β → BTree β
+instance : Hash ℕ := ⟨fun a b => (hash (a, b)).toNat⟩
+
+inductive BTree (β : Type u) : ℕ → Type u where
+  | leaf : (n : ℕ) → Option β → BTree β n
+  | node : {n : ℕ} → BTree β n → BTree β n → BTree β (n + 1)
 
 namespace BTree
 
-def root : BTree β → β
-  | leaf b => b
-  | node b _ _ => b
+def lift {n : ℕ} : BTree β n → BTree β (n + 1)
+  | leaf n a => leaf (n + 1) a
+  | node l r => node l.lift r.lift
 
-variable [Hash β]
+@[simp] theorem lift_leaf : (leaf n a).lift = leaf (n + 1) a := rfl
+@[simp] theorem lift_node : (node l r).lift = node l.lift r.lift := rfl
 
-def listOfTree : {n : ℕ} → (Fin (2^n) → β) → BTree β
-  | 0, t => leaf (t 0)
+def drop : {n : ℕ} → BTree β (n + 1) → BTree β n
+  | n, leaf _ a => leaf n a
+  | (n + 1), node l r => node l.drop r.drop
+  | 0, node _ _ => leaf _ none
+
+@[simp] theorem drop_leaf : (leaf (n + 1) a).drop = leaf n a := by
+  unfold drop
+
+
+@[simp] theorem drop_node_succ : (node (l : BTree β (n + 1)) r).drop = node l.drop r.drop := rfl
+
+@[simp] theorem drop_node_zero : (node (l : BTree β 0) r).drop = leaf 0 none := rfl
+
+theorem drop_lift (s : BTree β n) : s.lift.drop = s := by
+  induction s
+  · simp_rw [lift_leaf, drop_leaf]
+  · simp_rw [lift_node, drop_node_succ, node.injEq]
+    exact ⟨by assumption, by assumption⟩
+
+def emp (β : Type u) : (n : ℕ) → BTree β n
+  | 0 => leaf 0 none
+  | (_ + 1) => node (emp _ _) (emp _ _)
+
+def root [Hash β] {n : ℕ} : BTree β n → Option β
+  | leaf n b => b
+  | node b1 b2 => Option.map₂ (· # ·) (root b1) (root b2)
+
+theorem root_leaf [Hash β] : root (leaf n (b : Option β)) = b := rfl
+
+theorem root_node [Hash β] {l : BTree β n} :
+    root (node l r) = Option.map₂ (· # ·) (root l) (root r) := rfl
+
+theorem root_emp [Hash β] : root (emp β n) = none := by
+  induction n with | zero => _ | succ n IH => _
+  · rfl
+  · exact root_node.trans (IH.symm ▸ rfl)
+
+def sngl (a : β) : BTree β 1 := node (leaf 0 (some a)) (leaf 0 none)
+
+theorem root_sngl [Hash β] : (sngl (a : β)).root = none := rfl
+
+def bit0 (p : BTree β n) : BTree β (n + 1) := node p (emp _ _)
+
+theorem root_bit0 [Hash β] (p : BTree β n) : (bit0 p).root = none :=
+  root_node.trans ((root_emp (β := β)).symm ▸ Option.map₂_none_right _ _)
+
+def bit1 (a : β) (p : BTree β n) : BTree β (n + 1) := node (leaf n (some a)) p
+
+#eval bit0 (bit1 45 (sngl 32))
+#eval sngl 77
+
+theorem root_bit1 [Hash β] (p : BTree β n) : (bit1 a p).root = (some a).map₂ (· # ·) p.root :=
+  root_node.trans (root_leaf (β := β) ▸ rfl)
+
+#eval (bit0 (sngl 8))
+
+def listOfTree : {n : ℕ} → (Fin (2^n) → β) → BTree β n
+  | 0, t => leaf 0 (t 0)
   | (_ + 1), t =>
     let (f, l) := twoPowSuccTupleDivide t
-    let t₁ := listOfTree f
-    let t₂ := listOfTree l
-    node ((root t₁) # (root t₂)) t₁ t₂
+    node (listOfTree f) (listOfTree l)
 
-def finalHash : {n : ℕ} → (Fin (2^n) → β) → β
+theorem listOfTree_zero (bs : Fin (2^0) → β) :
+  listOfTree bs = leaf 0 (some (bs 0)) := rfl
+
+theorem listOfTree_succ (bs : Fin (2^(n + 1)) → β) :
+  listOfTree bs =
+  node (listOfTree (twoPowSuccTupleDivide bs).1)
+  (listOfTree (twoPowSuccTupleDivide bs).2) := rfl
+
+def finalHash [Hash β] : {n : ℕ} → (Fin (2^n) → β) → β
   | 0, t => t 0
   | (_ + 1), t =>
     let (f, l) := twoPowSuccTupleDivide t
     (finalHash f) # (finalHash l)
 
-theorem finalHash_zero (bs : Fin (2^0) → β) :
+theorem finalHash_zero [Hash β] (bs : Fin (2^0) → β) :
   finalHash bs = bs 0 := rfl
 
-theorem finalHash_succ (n : ℕ) (bs : Fin (2^(n + 1)) → β) :
+theorem finalHash_succ [Hash β] (n : ℕ) (bs : Fin (2^(n + 1)) → β) :
   finalHash bs =
   (finalHash (twoPowSuccTupleDivide bs).1) #
   (finalHash (twoPowSuccTupleDivide bs).2) := rfl
 
-theorem finalHash_succ_eq_finalHash (n : ℕ) (bs : Fin (2^(n + 1)) → β) :
+theorem blahj [Hash β] (n : ℕ) (bs : Fin (2^(n + 1)) → β) :
+  finalHash bs = _
+
+theorem finalHash_succ_eq_finalHash [Hash β] (n : ℕ) (bs : Fin (2^(n + 1)) → β) :
     finalHash bs = finalHash (fun i =>
     bs (interleveTwoPow (Sum.inl i)) # bs (interleveTwoPow (Sum.inr i))) := by
   induction' n with n IH
@@ -429,9 +699,19 @@ theorem finalHash_succ_eq_finalHash (n : ℕ) (bs : Fin (2^(n + 1)) → β) :
     simp_rw [twoPowSuccTupleDivide_apply, concatTwoPow_inr_interleveTwoPow_inl,
       concatTwoPow_inr_interleveTwoPow_inr]
 
-end BTree
+theorem finalHash_eq_root_listOfTree [Hash β] (bs : Fin (2^n) → β) :
+    root (listOfTree bs) = finalHash bs := by
+  induction' n with n IH
+  · simp_rw [finalHash_zero, listOfTree_zero, root_leaf]
+  · simp_rw [finalHash_succ, listOfTree_succ, root_node, IH, Option.map₂_some_some]
 
-instance : Hash ℕ := ⟨fun a b => (hash (a, b)).toNat⟩
+theorem isSome_root_listOfTree [Hash β] (bs : Fin (2^n) → β) :
+    (root (listOfTree bs)).isSome := by
+  rw [Option.isSome_iff_exists]
+  exact ⟨_, finalHash_eq_root_listOfTree bs⟩
+
+
+end BTree
 
 inductive PSharedStack (β : Type u) : Type u
   | sngl : β → PSharedStack β
@@ -463,6 +743,32 @@ theorem log2_bit1_ne_zero : (bit1 a p).log2 ≠ 0 := Nat.succ_ne_zero _
 
 end Log2
 
+def appendSingle : PSharedStack β → β → PSharedStack β
+  | sngl a, b => bit1 a (sngl b)
+  | (bit0 p), b => bit0 (appendSingle p b)
+  | (bit1 a p), b => bit1 a (appendSingle p b)
+
+section AppendSingle
+
+@[simp] theorem appendSingle_sngl : (sngl a).appendSingle b = bit1 a (sngl b) := rfl
+@[simp] theorem appendSingle_bit0 : (bit0 p).appendSingle b = bit0 (p.appendSingle b) := rfl
+@[simp] theorem appendSingle_bit1 : (bit1 a p).appendSingle b = bit1 a (p.appendSingle b) := rfl
+
+end AppendSingle
+
+def reverse : PSharedStack β → PSharedStack β
+  | sngl a => sngl a
+  | bit0 p => reverse p
+  | bit1 a p => (reverse p).appendSingle a
+
+section Reverse
+
+@[simp] theorem reverse_sngl : (sngl a).reverse = sngl a := rfl
+@[simp] theorem reverse_bit0 : (bit0 p).reverse = p.reverse := rfl
+@[simp] theorem reverse_bit1 : (bit1 a p).reverse = p.reverse.appendSingle a := rfl
+
+end Reverse
+
 def size (p : PSharedStack β) : ℕ := p.log2 + 1
 
 section Size
@@ -471,11 +777,13 @@ section Size
 @[simp] theorem size_bit0 : (bit0 p).size = p.size + 1 := rfl
 @[simp] theorem size_bit1 : (bit1 a p).size = p.size + 1 := rfl
 
-@[simp] theorem size_ne_zero : p.size ≠ 0 := Nat.succ_ne_zero _
+instance NeZero.size : NeZero (p.size) := ⟨Nat.succ_ne_zero _⟩
 
-@[simp] theorem size_pos : 0 < p.size := Nat.pos_of_ne_zero size_ne_zero
+@[simp] theorem size_ne_zero : p.size ≠ 0 := NeZero.ne _
 
-@[simp] theorem one_le_size : 1 ≤ p.size := size_pos
+@[simp] theorem size_pos : 0 < p.size := NeZero.pos _
+
+@[simp] theorem one_le_size : 1 ≤ p.size := NeZero.one_le
 
 theorem size_eq_log2_succ : p.size = p.log2 + 1 := rfl
 
@@ -640,67 +948,83 @@ instance [Repr β] : Repr (PSharedStack β) where
 
 end ToList
 
+inductive isMaxedN : (p : PSharedStack β) → ℕ → Prop
+  | protected sngl : (a : β) → isMaxedN (sngl a) 0
+  | protected bit0 : {p : PSharedStack β} → {n : ℕ} →
+      p.isMaxedN n → (bit0 p).isMaxedN (n + 1)
+  | protected bit1 : (a : β) → {p : PSharedStack β} →
+      p.isMaxedN 0 → (bit1 a p).isMaxedN 0
 
-def testBit : PSharedStack β → ℕ → Bool
-  | sngl _, 0 => true
-  | sngl _, (_ + 1) => false
-  | bit0 _, 0 => false
-  | bit0 p, (n + 1) => p.testBit n
-  | bit1 _ _, 0 => true
-  | bit1 _ p, (n + 1) => p.testBit n
+section IsMaxedN
 
-section TestBit
+variable {i : ℕ}
 
-@[simp] theorem testBit_sngl_zero : (sngl a).testBit 0 = true := rfl
-@[simp] theorem testBit_sngl_succ : (sngl a).testBit (n + 1) = false := rfl
+theorem le_log2_of_isMaxedN (hp : p.isMaxedN i) : i ≤ p.log2 := by
+  induction hp
+  · simp_rw [log2_sngl, le_refl]
+  · simp_rw [log2_bit0]
+    apply Nat.succ_le_succ
+    assumption
+  · exact zero_le _
 
-@[simp] theorem testBit_sngl : (sngl a).testBit n = decide (n = 0) :=
-  n.casesOn rfl (fun _ => rfl)
+theorem lt_size_of_isMaxedN (hp : p.isMaxedN i) : i < p.size :=
+  Nat.lt_succ_of_le <| le_log2_of_isMaxedN hp
 
-@[simp] theorem testBit_bit0_zero : (bit0 p).testBit 0 = false := rfl
-@[simp] theorem testBit_bit0_succ : (bit0 p).testBit (n + 1) = p.testBit n := rfl
+theorem not_isMaxedNof_size_le (hp : p.size ≤ i) : ¬ p.isMaxedN i :=
+  fun h => (lt_size_of_isMaxedN h).not_le hp
 
-@[simp] theorem testBit_bit0 : (bit0 p).testBit n = (!decide (n = 0) && p.testBit (n - 1)) :=
-  n.casesOn rfl (fun _ => rfl)
+theorem not_isMaxedNof_log2_lt (hp : p.log2 < i) : ¬ p.isMaxedN i :=
+  fun h => (le_log2_of_isMaxedN h).not_lt hp
 
-@[simp] theorem testBit_bit1_zero : (bit1 a p).testBit 0 = true := rfl
-@[simp] theorem testBit_bit1_succ : (bit1 a p).testBit (n + 1) = p.testBit n := rfl
+theorem isMaxedN_sngl_zero : (sngl a).isMaxedN 0 := by constructor
 
-@[simp] theorem testBit_bit1 : (bit1 a p).testBit n = (decide (n = 0) || p.testBit (n - 1)) :=
-  n.casesOn rfl (fun _ => rfl)
+theorem isMaxedN_sngl_last : (sngl a).isMaxedN ((sngl a).log2) := by constructor
 
-theorem testBit_of_log2_gt : p.log2 < n → p.testBit n = false := by
-  induction p generalizing n with | sngl => _ | bit0 _ IH => _ | bit1 _ _ IH => _
-  · simp_rw [log2_sngl, testBit_sngl, decide_eq_false_iff_not]
-    exact ne_of_gt
-  · simp_rw [log2_bit0, testBit_bit0, Bool.and_eq_false_imp, Bool.not_eq_eq_eq_not, Bool.not_true,
-      decide_eq_false_iff_not]
-    exact fun h _ => IH (Nat.lt_pred_of_succ_lt h)
-  · simp_rw [log2_bit1, testBit_bit1, Bool.or_eq_false_iff, decide_eq_false_iff_not]
-    exact fun h => ⟨Nat.not_eq_zero_of_lt h, IH (Nat.lt_pred_of_succ_lt h)⟩
+@[simp] theorem isMaxedN_sngl_iff : (sngl a).isMaxedN i ↔ i = 0 :=
+  ⟨fun h => by cases h ; rfl, fun h => by cases h ; constructor⟩
 
-theorem testBit_of_size_ge : p.size ≤ n → p.testBit n = false := by
-  rw [size_eq_log2_succ, Nat.succ_le_iff]
-  exact testBit_of_log2_gt
+theorem isMaxedN_bit0_succ_iff : (bit0 p).isMaxedN (i + 1) ↔ p.isMaxedN i :=
+  ⟨fun h => by cases h ; assumption, fun h => by constructor ; assumption⟩
 
-theorem testBit_log2 : p.testBit p.log2 = true := p.recOn
-  (fun _ => rfl)
-  (fun _ => by simp_rw [log2_bit0, testBit_bit0_succ, imp_self])
-  (fun _ _ => by simp_rw [log2_bit1, testBit_bit1_succ, imp_self])
+theorem isMaxedN_bit1_iff : (bit1 a p).isMaxedN i ↔ i = 0 ∧ p.isMaxedN i :=
+  ⟨fun h => by cases h ; exact ⟨rfl, by assumption⟩,
+  fun ⟨h₁, h₂⟩ => by subst h₁ ; constructor ; assumption⟩
 
-@[simp]
-theorem testBit_count : p.count.testBit n = p.testBit n := by
-  induction p generalizing n with | sngl => _ | bit0 _ IH => _ | bit1 _ _ IH => _ <;>
-  [rw [count_sngl]; rw [count_bit0]; rw [count_bit1]] <;> cases n
-  · simp_rw [testBit_sngl_zero, Nat.testBit_one_zero]
-  · simp_rw [testBit_sngl_succ, Nat.testBit_succ, Nat.div_eq_of_lt (one_lt_two), Nat.zero_testBit]
-  · simp_rw [testBit_bit0_zero, Nat.testBit_zero, Nat.mul_mod_right, zero_ne_one, decide_False]
-  · simp_rw [testBit_bit0_succ, Nat.testBit_succ, Nat.mul_div_cancel_left _ zero_lt_two, IH]
-  · simp_rw [testBit_bit1_zero, Nat.testBit_zero, Nat.mul_add_mod, decide_True]
-  · simp_rw [testBit_bit1_succ, Nat.testBit_succ, Nat.mul_add_div zero_lt_two,
-      Nat.div_eq_of_lt one_lt_two, add_zero, IH]
+theorem isMaxedN_bit1_zero_iff : (bit1 a p).isMaxedN 0 ↔ p.isMaxedN 0 :=
+  ⟨fun h => by cases h ; assumption, fun h => by constructor ; assumption⟩
 
-end TestBit
+@[simp] theorem not_isMaxedN_bit0 : ¬ (bit0 p).isMaxedN 0 := fun h => by contradiction
+
+@[simp] theorem not_isMaxedN_ne_zero [NeZero i] : ¬ (bit1 a p).isMaxedN i := fun h => by
+  simp_rw [isMaxedN_bit1_iff, NeZero.ne i, false_and] at h
+
+theorem isMaxedN_iff_count_eq :
+    p.isMaxedN i ↔ p.count = 2^(p.size) - 2^i := by
+  induction p generalizing i with | sngl a => _ | bit0 p IH => _ | bit1 a p IH => _
+  · simp_rw [isMaxedN_sngl_iff, count_sngl, size_sngl, pow_one]
+    cases i
+    · simp_rw [pow_zero, Nat.add_one_sub_one]
+    · simp_rw [Nat.succ_ne_zero, false_iff, pow_succ']
+      cases (2 ^ _)
+      · simp_rw [mul_zero, tsub_zero, one_lt_two.ne, not_false_eq_true]
+      · simp_rw [Nat.mul_succ, add_comm, Nat.sub_self_add, zero_ne_one.symm, not_false_eq_true]
+  · cases i
+    · simp_rw [not_isMaxedN_bit0, false_iff, count_bit0, pow_zero,
+        eq_tsub_iff_add_eq_of_le Nat.one_le_two_pow, size_bit0, pow_succ']
+      exact (Nat.two_mul_ne_two_mul_add_one).symm
+    · simp_rw [isMaxedN_bit0_succ_iff, IH,  count_bit0, size_bit0, pow_succ',
+        ← Nat.mul_sub, Nat.mul_left_cancel_iff zero_lt_two]
+  · cases i
+    · simp_rw [isMaxedN_bit1_zero_iff, IH, count_bit1, size_bit1, pow_zero,
+        eq_tsub_iff_add_eq_of_le Nat.one_le_two_pow, pow_succ' (n := p.size),
+        add_assoc, ← two_mul, ← mul_add, Nat.mul_left_cancel_iff zero_lt_two]
+    · simp_rw [not_isMaxedN_ne_zero, false_iff, count_bit1, size_bit1, pow_succ', ← Nat.mul_sub]
+      exact (Nat.two_mul_ne_two_mul_add_one).symm
+
+instance : Decidable (p.isMaxedN i) :=
+  decidable_of_iff _ isMaxedN_iff_count_eq.symm
+
+end IsMaxedN
 
 inductive isRoot : PSharedStack β → Prop
   | protected sngl : (a : β) → isRoot (sngl a)
@@ -723,12 +1047,19 @@ theorem isRoot_iff_count_eq_two_pow_log2 : p.isRoot ↔ p.count = 2^p.log2 := by
   · simp_rw [not_isRoot_bit1, count_bit1, log2_bit1, false_iff, pow_succ']
     exact (Nat.two_mul_ne_two_mul_add_one).symm
 
+instance : Decidable (p.isRoot) :=
+  decidable_of_iff _ isRoot_iff_count_eq_two_pow_log2.symm
+
 theorem isRoot_iff_exists_size_eq_two_pow : p.isRoot ↔ ∃ k, p.count = 2^k := by
   rw [isRoot_iff_count_eq_two_pow_log2]
   refine ⟨fun h => ⟨_, h⟩, fun ⟨k, hk⟩ => ?_⟩
   have H := hk ▸ p.log_two_count_eq_log2
   rw [Nat.log_pow one_lt_two] at H
   exact H ▸ hk
+
+theorem isRoot_iff_isMaxedN_plog2 : p.isRoot ↔ p.isMaxedN p.log2 := by
+  rw [isMaxedN_iff_count_eq, isRoot_iff_count_eq_two_pow_log2, size_eq_log2_succ,
+    pow_succ', two_mul, Nat.add_sub_cancel]
 
 theorem isRoot_iff_sizeInc_eq_two_pow_log2 : p.isRoot ↔ p.sizeInc = 2^p.log2 := by
   rw [isRoot_iff_count_eq_two_pow_log2]
@@ -738,9 +1069,6 @@ theorem isRoot_iff_sizeInc_eq_two_pow_log2 : p.isRoot ↔ p.sizeInc = 2^p.log2 :
 theorem isRoot_iff_sizeCap_eq_two_pow_log2 : p.isRoot ↔ p.sizeCap = 2^p.log2 - 1 := by
   rw [isRoot_iff_sizeInc_eq_two_pow_log2, sizeInc_eq_sizeCap_succ,
     eq_tsub_iff_add_eq_of_le Nat.one_le_two_pow]
-
-instance : Decidable (p.isRoot) :=
-  decidable_of_iff _ isRoot_iff_count_eq_two_pow_log2.symm
 
 end IsRoot
 
@@ -766,6 +1094,9 @@ theorem isMaxed_iff_count_eq_pred_two_pow_size :
     exact (Nat.two_mul_ne_two_mul_add_one).symm
   · simp_rw [isMaxed_bit1_iff, IH, count_bit1, size_bit1, pow_succ', add_assoc,
       ← Nat.mul_succ, mul_eq_mul_left_iff, zero_lt_two.ne', or_false]
+
+theorem isMaxed_iff_isMaxedN_zero : p.isMaxed ↔ p.isMaxedN 0 := by
+  rw [isMaxedN_iff_count_eq, isMaxed_iff_count_eq_pred_two_pow_size, pow_zero]
 
 instance : Decidable (p.isMaxed) :=
   decidable_of_iff _ isMaxed_iff_count_eq_pred_two_pow_size.symm
@@ -817,25 +1148,117 @@ instance : Decidable (p.isSingle) := decidable_of_iff _ isMaxed_and_isRoot_iff_i
 
 end IsSingle
 
-def appendSingle : PSharedStack β → β → PSharedStack β
-  | sngl a, b => bit1 a (sngl b)
-  | (bit0 p), b => bit0 (appendSingle p b)
-  | (bit1 a p), b => bit1 a (appendSingle p b)
+def testBit : PSharedStack β → ℕ → Bool
+  | sngl _, 0 => true
+  | sngl _, (_ + 1) => false
+  | bit0 _, 0 => false
+  | bit0 p, (n + 1) => p.testBit n
+  | bit1 _ _, 0 => true
+  | bit1 _ p, (n + 1) => p.testBit n
 
-section AppendSingle
+section TestBit
 
-@[simp] theorem appendSingle_sngl : (sngl a).appendSingle b = bit1 a (sngl b) := rfl
-@[simp] theorem appendSingle_bit0 : (bit0 p).appendSingle b = bit0 (p.appendSingle b) := rfl
-@[simp] theorem appendSingle_bit1 : (bit1 a p).appendSingle b = bit1 a (p.appendSingle b) := rfl
+@[simp] theorem testBit_sngl_zero : (sngl a).testBit 0 = true := rfl
+@[simp] theorem testBit_sngl_succ : (sngl a).testBit (n + 1) = false := rfl
 
-end AppendSingle
+theorem testBit_sngl : (sngl a).testBit n = decide (n = 0) :=
+  n.casesOn rfl (fun _ => rfl)
 
-def last : PSharedStack β → β
-  | sngl a => a
-  | bit0 p => p.last
-  | bit1 _ p => p.last
+@[simp] theorem testBit_bit0_zero : (bit0 p).testBit 0 = false := rfl
+@[simp] theorem testBit_bit0_succ : (bit0 p).testBit (n + 1) = p.testBit n := rfl
+
+theorem testBit_bit0 : (bit0 p).testBit n = (!decide (n = 0) && p.testBit (n - 1)) :=
+  n.casesOn rfl (fun _ => rfl)
+
+@[simp] theorem testBit_bit1_zero : (bit1 a p).testBit 0 = true := rfl
+@[simp] theorem testBit_bit1_succ : (bit1 a p).testBit (n + 1) = p.testBit n := rfl
+
+theorem testBit_bit1 : (bit1 a p).testBit n = (decide (n = 0) || p.testBit (n - 1)) :=
+  n.casesOn rfl (fun _ => rfl)
+
+theorem testBit_of_log2_gt : p.log2 < n → p.testBit n = false := by
+  induction p generalizing n with | sngl => _ | bit0 _ IH => _ | bit1 _ _ IH => _
+  · simp_rw [log2_sngl, testBit_sngl, decide_eq_false_iff_not]
+    exact ne_of_gt
+  · simp_rw [log2_bit0, testBit_bit0, Bool.and_eq_false_imp, Bool.not_eq_eq_eq_not, Bool.not_true,
+      decide_eq_false_iff_not]
+    exact fun h _ => IH (Nat.lt_pred_of_succ_lt h)
+  · simp_rw [log2_bit1, testBit_bit1, Bool.or_eq_false_iff, decide_eq_false_iff_not]
+    exact fun h => ⟨Nat.not_eq_zero_of_lt h, IH (Nat.lt_pred_of_succ_lt h)⟩
+
+theorem testBit_of_size_ge : p.size ≤ n → p.testBit n = false := by
+  rw [size_eq_log2_succ, Nat.succ_le_iff]
+  exact testBit_of_log2_gt
+
+theorem testBit_log2 : p.testBit p.log2 = true := p.recOn
+  (fun _ => rfl)
+  (fun _ => by simp_rw [log2_bit0, testBit_bit0_succ, imp_self])
+  (fun _ _ => by simp_rw [log2_bit1, testBit_bit1_succ, imp_self])
+
+@[simp]
+theorem testBit_count : p.count.testBit n = p.testBit n := by
+  induction p generalizing n with | sngl => _ | bit0 _ IH => _ | bit1 _ _ IH => _ <;>
+  [rw [count_sngl]; rw [count_bit0]; rw [count_bit1]] <;> cases n
+  · simp_rw [testBit_sngl_zero, Nat.testBit_one_zero]
+  · simp_rw [testBit_sngl_succ, Nat.testBit_succ, Nat.div_eq_of_lt (one_lt_two), Nat.zero_testBit]
+  · simp_rw [testBit_bit0_zero, Nat.testBit_zero, Nat.mul_mod_right, zero_ne_one, decide_False]
+  · simp_rw [testBit_bit0_succ, Nat.testBit_succ, Nat.mul_div_cancel_left _ zero_lt_two, IH]
+  · simp_rw [testBit_bit1_zero, Nat.testBit_zero, Nat.mul_add_mod, decide_True]
+  · simp_rw [testBit_bit1_succ, Nat.testBit_succ, Nat.mul_add_div zero_lt_two,
+      Nat.div_eq_of_lt one_lt_two, add_zero, IH]
+
+end TestBit
+
+def get? : PSharedStack β → ℕ → Option β
+  | sngl a, 0 => some a
+  | sngl _, (_ + 1) => none
+  | bit0 _, 0 => none
+  | bit0 p, (n + 1) => p.get? n
+  | bit1 a _, 0 => some a
+  | bit1 _ p, (n + 1) => p.get? n
+
+section Get?
+
+@[simp] theorem get?_sngl_zero : (sngl a).get? 0 = a := rfl
+@[simp] theorem get?_sngl_succ : (sngl a).get? (n + 1) = none := rfl
+
+@[simp] theorem get?_bit0_zero : (bit0 p).get? 0 = none := rfl
+@[simp] theorem get?_bit0_succ : (bit0 p).get? (n + 1) = p.get? n := rfl
+
+@[simp] theorem get?_bit1_zero : (bit1 a p).get? 0 = a := rfl
+@[simp] theorem get?_bit1_succ : (bit1 a p).get? (n + 1) = p.get? n := rfl
+
+open Option in
+theorem get?_isSome_eq_testBit : (p.get? n).isSome = p.testBit n := by
+  induction p generalizing n with | sngl => _ | bit0 _ IH => _ | bit1 _ _ IH => _ <;> cases n
+  · simp_rw [testBit_sngl_zero, get?_sngl_zero, isSome_some]
+  · simp_rw [testBit_sngl_succ, get?_sngl_succ, isSome_none]
+  · simp_rw [testBit_bit0_zero, get?_bit0_zero, isSome_none]
+  · simp_rw [testBit_bit0_succ, get?_bit0_succ, IH]
+  · simp_rw [testBit_bit1_zero, get?_bit1_zero, isSome_some]
+  · simp_rw [testBit_bit1_succ, get?_bit1_succ, IH]
+
+end Get?
+
+def get (p : PSharedStack β) (n : ℕ) (h : p.testBit n) : β :=
+  (p.get? n).get (get?_isSome_eq_testBit ▸ h)
+
+section Get
+
+@[simp] theorem get_sngl_zero : (sngl a).get 0 testBit_sngl_zero = a := rfl
+
+@[simp] theorem get_bit0_succ : (bit0 p).get (n + 1) h = p.get n (testBit_bit0_succ ▸ h) := rfl
+
+@[simp] theorem get_bit1_zero : (bit1 a p).get 0 testBit_bit1_zero = a := rfl
+@[simp] theorem get_bit1_succ : (bit1 a p).get (n + 1) h = p.get n (testBit_bit1_succ ▸ h) := rfl
+
+end Get
+
+def last (p : PSharedStack β) : β := p.get p.log2 testBit_log2
 
 section Last
+
+theorem last_eq_get : p.last = p.get p.log2 testBit_log2 := rfl
 
 @[simp] theorem last_sngl : (sngl a).last = a := rfl
 @[simp] theorem last_bit0 : (bit0 p).last = p.last := rfl
@@ -999,6 +1422,23 @@ theorem last_push_eq_hash_of_isMaxed (hp : p.isMaxed) :
 
 
 end Push
+
+def toTree : (p : PSharedStack β) → BTree β (p.size + 1) → BTree β _
+  | sngl a, t => _
+  | (bit0 p), t => _
+  | (bit1 a p), t => (p.toTree t).lift
+
+-- This is wrong - backwards!
+
+#eval (BTree.bit1 45 (BTree.sngl 77))
+#eval (bit1 45 (sngl 77)).toTree
+#eval toTree <| (((sngl 4).push 7).push 6).push 5
+#eval (4 # 7) # (6 # 5)
+section ToTree
+
+theorem get?
+
+end ToTree
 
 def pushTuple [Hash β] : PSharedStack β → (Fin k → β) → PSharedStack β := match k with
   | 0 => fun p _ => p
@@ -1252,23 +1692,6 @@ theorem log2_stackOfPredTwoPowTuple [NeZero n] {bs : Fin (2^n - 1) → β} :
 theorem size_stackOfPredTwoPowTuple {bs : Fin (2^n - 1) → β} [NeZero n] :
     (stackOfTuple bs).size = n := by
   rw [size_stackOfTuple, Nat.size_pred_pow]
-
-theorem asdfsdfgddfs  (hp : p.isRoot) {bs : Fin (2^p.log2) → β} :
-    (p.pushTuple bs).last = p.last # (stackOfTuple bs).last := by
-  induction p with | sngl => _ | bit0 p IH => _ | bit1 => _
-  · simp_rw [last_sngl, ← stackOfTuple_cons, stackOfTuple_succ, pushTuple_one, pushTuple_zero,
-      push_sngl, last_bit0, last_sngl, cons_zero, tail_def, cons_succ]
-  · simp at *
-    rw [← IH hp (bs := bs)]
-  · simp at hp
-  /-induction hp generalizing k with | sngl a => _ | bit0 a p => _
-  · simp_rw [log2_sngl, pow_zero] at hk
-    cases hk
-    simp_rw [last_sngl, ← stackOfTuple_cons, stackOfTuple_succ, pushTuple_one, pushTuple_zero,
-      push_sngl, last_bit0, last_sngl, cons_zero, tail_def, cons_succ]
-  · simp at hk
-    simp_rw [last_bit0]
-    rw [← hk]-/
 
 
 end StackOfTuple
@@ -1815,334 +2238,4 @@ theorem finalHash_succ (bs : Fin (2^(n + 1)) → β) : finalHash bs =
 
 end FinalHash
 
-/-
-def finalHash : {n : ℕ} → (Fin (2^n) → β) → β
-  | 0, t => t 0
-  | (n + 1), t =>
-    let (f, l) := twoPowSuccTupleDivide t
-    (finalHash n f) # (finalHash n l)
-
-theorem finalHash_zero (bs : Fin (2^0) → β) :
-  finalHash 0 bs = bs 0 := rfl
-
-theorem finalHash_succ (n : ℕ) (bs : Fin (2^(n + 1)) → β) :
-  finalHash (n + 1) bs =
-  (finalHash n (twoPowSuccTupleDivide bs).1) #
-  (finalHash n (twoPowSuccTupleDivide bs).2) := rfl
-
--/
-
-#eval (bit0 (sngl 5324))
-
-#eval List.foldl addToStack (sngl 234234) [12, 44, 5324]
-
-#eval 5324 # 12
-
-#eval addToStack (bit1 44 (bit1 12 (sngl 234234))) 5324
-
-
-#eval BTree.finalHash 1 ![234234, 12]
-
-
-#eval BTree.finalHash 2 ![234234, 12, 44, 5324]
-
-theorem length_addToStack [Hash β] (s : SharedStack β) (b : β) :
-    (addToStack s b).length = s.length := by
-  induction' s with a s IH generalizing b
-  · rw [addToStack_nil]
-  · cases' a
-    · simp_rw [addToStack_none_cons, List.length_cons]
-    · simp_rw [addToStack_some_cons, List.length_cons, add_left_inj, IH]
-
-theorem mem_addToStack_eq_none_iff_mem_isSome [Hash β] (s : SharedStack β) (b : β) :
-    (∀ a ∈ s.addToStack b, a = none) ↔ ∀ a ∈ s, a.isSome := by
-  induction' s with a s IH generalizing b
-  · simp_rw [addToStack_nil, List.not_mem_nil, false_implies]
-  · cases' a
-    · simp_rw [addToStack_none_cons, List.mem_cons, forall_eq_or_imp, Option.some_ne_none,
-        Option.isSome_none, Bool.false_eq_true, false_and]
-    · simp_rw [addToStack_some_cons, List.mem_cons, forall_eq_or_imp, Option.isSome_some, IH]
-
-theorem mem_addToStack_eq_none_iff_mem_isSome' [Hash β] (s : SharedStack β) (b : β) :
-    (∃ a ∈ s.addToStack b, a.isSome) ↔ ∃ a ∈ s, a = none := not_iff_not.mp <| by
-  simp_rw [not_exists, not_and, Bool.not_eq_true, ← Bool.not_eq_true,
-    Option.not_isSome_iff_eq_none, mem_addToStack_eq_none_iff_mem_isSome, ← Bool.not_eq_false,
-    Option.not_isSome, Option.isNone_iff_eq_none]
-
-
-def addListToStack [Hash β] : SharedStack β → List β → SharedStack β :=
-  list.foldl addToStack (List.replicate (n + 1) none)
-
-def stackcount (s : SharedStack β) : ℕ :=
-  match s with
-  | [] => 0
-  | (a :: s) => Nat.bit a.isSome (stackcount s)
-
-@[simp]
-theorem stackcount_nil : stackcount ([] : SharedStack β) = 0 := rfl
-
-theorem stackcount_cons (s : SharedStack β) :
-    stackcount (a :: s) = Nat.bit a.isSome s.stackcount := rfl
-
-@[simp]
-theorem stackcount_some_cons (s : SharedStack β) :
-    stackcount (some a :: s) = 2 * s.stackcount + 1 := rfl
-
-@[simp]
-theorem stackcount_none_cons (s : SharedStack β) :
-    stackcount (none :: s) = 2 * s.stackcount := rfl
-
-@[simp]
-theorem testBit_stackcount {s : SharedStack β} {i : ℕ} :
-    s.stackcount.testBit i = if h : i < s.length then s[i].isSome else false := by
-  induction' s with a s IH generalizing i
-  · simp_rw [stackcount_nil, Nat.zero_testBit, List.length_nil, not_lt_zero', dite_false]
-  · simp_rw [List.length_cons, stackcount_cons]
-    cases' i
-    · simp_rw [Nat.testBit_bit_zero, Nat.zero_lt_succ, dite_true, List.getElem_cons_zero]
-    · simp_rw [Nat.testBit_bit_succ, Nat.succ_lt_succ_iff, List.getElem_cons_succ, IH]
-
-theorem testBit_fin_length {s : SharedStack β} {i : Fin (s.length)} :
-    s.stackcount.testBit i = s[(i : ℕ)].isSome := by simp_rw [testBit_stackcount, i.isLt, dite_true]
-
-theorem finArrowBoolToNat_isSome_get_eq_stackcount (s : SharedStack β) :
-    Fin.finArrowBoolToNat (fun i => Option.isSome <| s[(i : ℕ)]) = s.stackcount :=
-  Nat.eq_of_testBit_eq (fun _ => Fin.testBit_finArrowBoolToNat.trans testBit_stackcount.symm)
-
-theorem stackcount_addToStack_of_none_mem [Hash β] (s : SharedStack β) (hs : none ∈ s) (b : β) :
-    stackcount (addToStack s b) = s.stackcount + 1 := by
-  induction' s with a s IH generalizing b
-  · simp at hs
-  · cases' a
-    · simp_rw [addToStack_none_cons, stackcount_some_cons, stackcount_none_cons]
-    · simp at hs
-      simp_rw [addToStack_some_cons, stackcount_none_cons, stackcount_some_cons, IH hs, mul_add]
-
-theorem stackcount_eq_zero_iff_all_none (s : SharedStack β) :
-    s.stackcount = 0 ↔ s = List.replicate (s.length) none := by
-  induction' s with a s IH
-  · simp_rw [stackcount_nil, List.length_nil, List.replicate_zero]
-  · cases' a
-    · simp_rw [stackcount_none_cons, mul_eq_zero, two_ne_zero, false_or,
-        List.length_cons, List.replicate_succ, List.cons_eq_cons, true_and, IH]
-    · simp_rw [stackcount_some_cons, Nat.add_eq_zero_iff, mul_eq_zero, one_ne_zero, and_false,
-        false_iff, List.length_cons, List.replicate_succ, List.cons_eq_cons, Option.some_ne_none,
-        not_and, false_implies]
-
-theorem stackcount_pos_iff_exists_some (s : SharedStack β) :
-    0 < s.stackcount ↔ ∃ a ∈ s, a.isSome := by
-  simp_rw [Nat.pos_iff_ne_zero, not_iff_comm (a := s.stackcount = 0),
-    stackcount_eq_zero_iff_all_none, not_exists, not_and, Bool.not_eq_true, Option.not_isSome,
-    Option.isNone_iff_eq_none, List.eq_replicate_iff, true_and]
-
-theorem stackcount_lt_two_pow (s : SharedStack β) :
-    s.stackcount < 2^(s.length) := by
-  induction' s with a s IH
-  · simp_rw [stackcount_nil, List.length_nil, pow_zero, zero_lt_one]
-  · cases' a
-    · simp_rw [stackcount_none_cons, List.length_cons, pow_succ']
-      exact Nat.bit_lt_bit false false IH
-    · simp_rw [stackcount_some_cons, List.length_cons, pow_succ']
-      exact Nat.bit_lt_bit true false IH
-
-theorem stackcount_le_two_pow_pred (s : SharedStack β) :
-    s.stackcount ≤ 2^(s.length) - 1 := by
-  rw [Nat.le_pred_iff_lt (Nat.two_pow_pos _)]
-  exact s.stackcount_lt_two_pow
-
-theorem stackcount_lt_two_pow_pred_iff_none_mem (s : SharedStack β) :
-    s.stackcount < 2^(s.length) - 1 ↔ none ∈ s := by
-  simp_rw [Nat.pred, Nat.lt_pred_iff]
-  induction' s with a s IH
-  · simp_rw [stackcount_nil, Nat.succ_eq_add_one, zero_add, List.length_nil, pow_zero,
-      lt_self_iff_false, List.not_mem_nil]
-  · cases' a
-    · simp_rw [stackcount_none_cons, Nat.succ_eq_add_one, List.length_cons, List.mem_cons,
-        true_or, iff_true, pow_succ',
-        ← (Nat.ne_of_odd_add ((odd_two_mul_add_one _).add_even (even_two_mul _))).le_iff_lt,
-        Nat.add_one_le_iff, Nat.mul_lt_mul_left (zero_lt_two), stackcount_lt_two_pow]
-    · simp_rw [stackcount_some_cons, Nat.succ_eq_add_one, List.length_cons, List.mem_cons,
-        fun x => (Option.some_ne_none x).symm, false_or, add_assoc, ← two_mul, ← mul_add,
-        pow_succ', Nat.mul_lt_mul_left (zero_lt_two), IH]
-
-theorem stackcount_eq_two_pos_pred_iff_forall_mem_isSome (s : SharedStack β) :
-    s.stackcount = 2^(s.length) - 1 ↔ ∀ a ∈ s, a.isSome := Decidable.not_iff_not.mp <| by
-  simp_rw [not_forall, exists_prop, Bool.not_eq_true, Option.not_isSome,
-    Option.isNone_iff_eq_none, exists_eq_right, ← stackcount_lt_two_pow_pred_iff_none_mem,
-    s.stackcount_le_two_pow_pred.lt_iff_ne]
-
-theorem testBit_stackcount_ge {s : SharedStack β} {i : ℕ} (hi : s.length ≤ i) :
-    s.stackcount.testBit i = false := Nat.testBit_eq_false_of_lt <|
-      s.stackcount_lt_two_pow.trans_le (Nat.pow_le_pow_of_le_right zero_lt_two hi)
-
-theorem testBit_stackcount_lt {s : SharedStack β} {i : ℕ} (hi : i < s.length) :
-    s.stackcount.testBit i = s[i].isSome := by
-  induction' s with a s IH generalizing i
-  · simp_rw [List.length_nil, not_lt_zero'] at hi
-  · rw [List.length_cons] at hi
-    simp_rw [stackcount_cons]
-    cases' i
-    · simp_rw [Nat.testBit_bit_zero, List.getElem_cons_zero]
-    · simp_rw [Nat.testBit_bit_succ, List.getElem_cons_succ]
-      exact IH _
-
-@[simp]
-theorem testBit_stackcount {s : SharedStack β} {i : ℕ} :
-    s.stackcount.testBit i = if h : i < s.length then s[i].isSome else false := by
-  split_ifs with hi
-  · exact testBit_stackcount_lt hi
-  · exact testBit_stackcount_ge (le_of_not_lt hi)
-
-theorem testBit_fin_length {s : SharedStack β} {i : Fin (s.length)} :
-    s.stackcount.testBit i = s[(i : ℕ)].isSome := by simp_rw [testBit_stackcount, i.isLt, dite_true]
-
-theorem finArrowBoolToNat_isSome_get_eq_stackcount (s : SharedStack β) :
-    Fin.finArrowBoolToNat (fun i => Option.isSome <| s[(i : ℕ)]) = s.stackcount :=
-  Nat.eq_of_testBit_eq (fun _ => Fin.testBit_finArrowBoolToNat.trans testBit_stackcount.symm)
-
-theorem lt_length_of_stackcount_eq_two_pow [Hash β] {s : SharedStack β} {i : ℕ}
-    (hs : s.stackcount = 2^i) : i < s.length := by
-  rw [← Nat.pow_lt_pow_iff_right one_lt_two, ← hs]
-  exact s.stackcount_lt_two_pow
-
-theorem getElem_isSome_eq_decide_of_stackcount_eq_two_pow [Hash β] {s : SharedStack β} {i k : ℕ}
-    (hs : s.stackcount = 2^i) (hk : k < s.length) : s[k].isSome = decide (i = k) := by
-  have hs := congrArg (Nat.testBit · k) hs
-  simp_rw [testBit_stackcount, Nat.testBit_two_pow, dif_pos hk] at hs
-  exact hs
-
-theorem getElem_isSome_of_stackcount_eq_two_pow [Hash β] {s : SharedStack β} {i : ℕ}
-    (hs : s.stackcount = 2^i) : (s[i]'(lt_length_of_stackcount_eq_two_pow hs)).isSome := by
-  simp_rw [getElem_isSome_eq_decide_of_stackcount_eq_two_pow hs, decide_True]
-
-theorem getElem_eq_none_of_ne_of_stackcount_eq_two_pow [Hash β] {s : SharedStack β} {i k : ℕ}
-    (hs : s.stackcount = 2^i) (hk : k < s.length) (hk' : i ≠ k) : s[k] = none := by
-  simp_rw [← Option.not_isSome_iff_eq_none,
-    getElem_isSome_eq_decide_of_stackcount_eq_two_pow hs, hk', decide_False,
-    Bool.false_eq_true, not_false_eq_true]
-
-
-
-theorem addToStack_ne_nil [Hash β] (s : SharedStack β) (b : β) :
-    addToStack s b ≠ [] := by
-  rcases s with (_ | ⟨(_ | _), _⟩) <;> exact List.cons_ne_nil _ _
-
-theorem length_addToStack_pos [Hash β] (s : SharedStack β) (b : β) :
-    0 < (addToStack s b).length := List.length_pos.mpr <| addToStack_ne_nil _ _
-
-theorem length_addToStack_of_mem_none [Hash β] (s : SharedStack β) (hs : none ∈ s) :
-    ∀ b, (addToStack s b).length = s.length := by
-  induction' s with a s IH
-  · simp_rw [List.not_mem_nil] at hs
-  · cases' a
-    · simp_rw [addToStack_none_cons, List.length_cons, implies_true]
-    · simp_rw [List.mem_cons, Option.none_ne_some, false_or] at hs
-      simp_rw [addToStack_some_cons, List.length_cons, add_left_inj, IH hs, implies_true]
-
-theorem blahj [Hash β] {s : SharedStack β} {i : ℕ} (hi : i < s.length) (hsi : s[i] = none) :
-    ∀ b, (addToStack s b).length = s.length := by
-  induction' s with a s IH
-  · simp_rw [List.not_mem_nil] at hs
-  · cases' a
-    · simp_rw [addToStack_none_cons, List.length_cons, implies_true]
-    · simp_rw [List.mem_cons, Option.none_ne_some, false_or] at hs
-      simp_rw [addToStack_some_cons, List.length_cons, add_left_inj, IH hs, implies_true]
-
-theorem addToStack_eq_replicate_append_singleton_of_not_mem_none [Hash β] (s : SharedStack β)
-    (hs : none ∉ s) : ∀ b, ∃ b', addToStack s b =
-    List.replicate (s.length) none ++ [some b'] := by
-  induction' s with a s IH
-  · refine fun b => ⟨b, ?_⟩
-    simp_rw [addToStack_nil, List.length_nil, List.replicate_zero, List.nil_append]
-  · cases' a
-    · simp_rw [List.mem_cons, true_or, not_true_eq_false] at hs
-    · simp_rw [List.mem_cons, Option.none_ne_some, false_or] at hs
-      simp_rw [addToStack_some_cons, List.length_cons, List.replicate_succ,
-        List.cons_append, List.cons_eq_cons, true_and]
-      exact fun b => IH hs (_ # b)
-
-theorem length_addToStack_of_not_mem_none [Hash β] (s : SharedStack β) (hs : none ∉ s) (b : β) :
-    (addToStack s b).length = s.length + 1 := by
-  rcases addToStack_eq_replicate_append_singleton_of_not_mem_none _ hs b with ⟨b', h⟩
-  rw [h, List.length_append, List.length_replicate, List.length_singleton]
-
-@[simp]
-theorem stackcount_addToStack [Hash β] (s : SharedStack β) (b : β) :
-    stackcount (addToStack s b) = s.stackcount + 1 := by
-  induction' s with a s IH generalizing b
-  · simp_rw [addToStack_nil, stackcount_some_cons, stackcount_nil]
-  · cases' a
-    · simp_rw [addToStack_none_cons, stackcount_some_cons, stackcount_none_cons]
-    · simp_rw [addToStack_some_cons, stackcount_none_cons, stackcount_some_cons, IH, mul_add]
-
-theorem stackcount_addToStack_ne_zero [Hash β] (s : SharedStack β) (b : β) :
-    stackcount (addToStack s b) ≠ 0 := by
-  rw [stackcount_addToStack] ; exact Nat.succ_ne_zero _
-
-def addStackOfTuple [Hash β] (s : SharedStack β) (bs : Fin k → β) : SharedStack β :=
-  Fin.tuple_foldl addToStack s bs
-
-@[simp]
-theorem addStackOfTuple_zero [Hash β] (s : SharedStack β) (bs : Fin 0 → β) :
-    addStackOfTuple s bs = s := Fin.foldl_zero _ _
-
-@[simp]
-theorem addStackOfTuple_succ [Hash β] (s : SharedStack β) (bs : Fin (k + 1) → β) :
-    addStackOfTuple s bs = addStackOfTuple (addToStack s (bs 0)) (Fin.tail bs) :=
-  Fin.foldl_succ _ _
-
-theorem addStackOfTuple_succ_last [Hash β] (s : SharedStack β) (bs : Fin (k + 1) → β) :
-    addStackOfTuple s bs = addToStack (addStackOfTuple s (Fin.init bs)) (bs (Fin.last k)) :=
-  Fin.foldl_succ_last _ _
-
-theorem length_addStackOfTuple_pos [Hash β] [NeZero k] (s : SharedStack β) (bs : Fin k → β) :
-    0 < (addStackOfTuple s bs).length := by
-  rcases (Nat.exists_eq_succ_of_ne_zero <| NeZero.ne k) with ⟨k, rfl⟩
-  rw [addStackOfTuple_succ_last]
-  exact length_addToStack_pos _ _
-
-theorem stackcount_addStackOfTuple [Hash β] (s : SharedStack β) (bs : Fin k → β) :
-    stackcount (addStackOfTuple s bs) = s.stackcount + k := by
-  induction' k with k IH generalizing s
-  · simp_rw [addStackOfTuple_zero, add_zero]
-  · simp_rw [addStackOfTuple_succ_last, stackcount_addToStack, IH, add_assoc]
-
-theorem addStackOfTuple_two_pow_succ [Hash β] (s : SharedStack β) (bs : Fin (2 ^ (n + 1)) → β) :
-    addStackOfTuple s bs = addStackOfTuple (addStackOfTuple s (twoPowSuccTupleDivide bs).1)
-    (twoPowSuccTupleDivide bs).2 :=
-  Fin.tuple_foldl_two_pow_succ _ _ _
-
-def finalHashStack [Hash β] (n : ℕ) (bs : Fin (2^n) → β) : SharedStack β := addStackOfTuple [] bs
-
-theorem stackcount_finalHashStack [Hash β] {n : ℕ} {bs : Fin (2^n) → β} :
-    stackcount (finalHashStack n bs) = 2^n :=
-  (stackcount_addStackOfTuple _ _).trans (zero_add _)
-
-theorem lt_length_finalHashStack [Hash β] {n : ℕ} {bs : Fin (2^n) → β} :
-    n < (finalHashStack n bs).length :=
-  lt_length_of_stackcount_eq_two_pow stackcount_finalHashStack
-
-theorem getElem_isSome_finalHashStack [Hash β] {n : ℕ} {bs : Fin (2^n) → β} :
-    ((finalHashStack n bs)[n]'lt_length_finalHashStack).isSome :=
-  getElem_isSome_of_stackcount_eq_two_pow stackcount_finalHashStack
-
-theorem finalHashStack_zero [Hash β] (bs : Fin (2^0) → β) : finalHashStack 0 bs = [some (bs 0)] := by
-  refine (addStackOfTuple_succ _ _).trans ?_
-  simp_rw [addStackOfTuple_zero, addToStack_nil]
-
-theorem finalHashStack_succ [Hash β] (n : ℕ) (bs : Fin (2^(n + 1)) → β) :
-  finalHashStack (n + 1) bs =
-  addStackOfTuple (finalHashStack n (twoPowSuccTupleDivide bs).1)
-  ((twoPowSuccTupleDivide bs).2) := addStackOfTuple_two_pow_succ _ _
-
 end SharedStack
-
-
-instance : Hash UInt64 := ⟨fun a b => hash (a, b)⟩
-
-instance : Hash ℕ := ⟨fun a b => (hash (a, b)).count⟩
-
-
-#eval BTree.finalHash 2 ![234234, 12, 44, 5324]
-
-#eval SharedStack.finalHash 2 ![234234, 12, 44, 5324]

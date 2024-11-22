@@ -6,6 +6,16 @@ example : 2^n + 2^n = 2^(n + 1) := by exact Eq.symm (Nat.two_pow_succ n)
 
 theorem Nat.testBit_ext_iff {q q' : ℕ} : q = q' ↔ (∀ i : ℕ, q.testBit i = q'.testBit i) :=
   ⟨fun h _ => h ▸ rfl, Nat.eq_of_testBit_eq⟩
+@[simp] theorem val_one_fin_at_least_two_pow {a : ℕ} [a.AtLeastTwo] [NeZero j] :
+    (1 : Fin (a^j)).val = 1 :=
+  Nat.mod_eq_of_lt (Nat.one_lt_pow (NeZero.ne j) Nat.AtLeastTwo.one_lt)
+
+theorem val_two_fin_two_pow {j : ℕ} [j.AtLeastTwo] : (2 : Fin (2^j)).val = 2 :=
+  Nat.mod_eq_of_lt (Nat.two_lt_of_ne (Nat.pow_pos zero_lt_two).ne'
+    (Nat.one_lt_pow (NeZero.ne j) one_lt_two).ne' <| by
+  rcases (Nat.exists_eq_add_of_lt Nat.AtLeastTwo.one_lt (n := j)) with ⟨j, rfl⟩
+  simp_rw [pow_succ', add_comm, pow_succ', ne_eq, Nat.mul_eq_left two_ne_zero, mul_eq_one,
+    OfNat.ofNat_ne_one 2, false_and, not_false_eq_true])
 
 theorem Nat.testBit_ne_iff {q q' : ℕ} : q ≠ q' ↔ (∃ i : ℕ, q.testBit i ≠ q'.testBit i) := by
   simp_rw [ne_eq, testBit_ext_iff, not_forall]

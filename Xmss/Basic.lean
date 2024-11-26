@@ -7,7 +7,7 @@ deriving Repr, DecidableEq, Inhabited
 
 namespace BTree
 
-variable {α : Type u} {a b : α} {t l r : BTree α} {n : ℕ}
+variable {α : Type u} {β : Type v} {a b : α} {t l r : BTree α} {n : ℕ}
 
 instance [IsEmpty α] : IsEmpty (BTree α) := ⟨fun t => t.recOn isEmptyElim (fun _ _ C => C.elim)⟩
 
@@ -18,6 +18,15 @@ instance [Nonempty α] : Infinite (BTree α) :=
     (fun _ _ C => BTree.noConfusion C))
     (fun _ IH j => j.recOn (fun C => BTree.noConfusion C)
     fun _ _ H => congrArg _ (IH (node.injEq _ _ _ _ ▸ H).1)))
+
+theorem leaf_inj_iff : leaf a = leaf a' ↔ a = a' := by simp_rw [leaf.injEq]
+
+theorem node_inj_iff : node l r = node l' r' ↔ (l = l' ∧ r = r') := by
+  simp_rw [node.injEq]
+
+@[simp] theorem node_ne_leaf : node l r ≠ leaf a := BTree.noConfusion
+
+@[simp] theorem leaf_ne_node : leaf a ≠ node l r := BTree.noConfusion
 
 def height : BTree α → ℕ
   | leaf _ => 0
@@ -50,11 +59,11 @@ theorem height_node_of_heights_eq (hl : l.height = n) (hr : r.height = n) :
     (node l r).height = n + 1 := by
   simp_rw [height_eq_succ_iff, hl, hr, le_refl, true_and, true_or]
 
-@[simp] theorem left_height_lt : l.height < (node l r).height := by
+theorem left_height_lt : l.height < (node l r).height := by
   simp_rw [height_node, Nat.lt_succ_iff]
   exact le_max_left _ _
 
-@[simp] theorem right_height_lt : r.height < (node l r).height := by
+theorem right_height_lt : r.height < (node l r).height := by
   simp_rw [height_node, Nat.lt_succ_iff]
   exact le_max_right _ _
 
@@ -191,56 +200,854 @@ theorem count_eq_two_pow_height_of_isPerfect (ht : t.isPerfect) : t.count = 2^t.
 
 end Count
 
-def map (f : α → β) : BTree α → BTree β
+def skeleton : BTree α → BTree Unit
+  | leaf _ => leaf ()
+  | node l r => node l.skeleton r.skeleton
+
+section Skeleton
+
+@[simp] theorem skeleton_leaf : (leaf a).skeleton = leaf () := rfl
+
+@[simp] theorem skeleton_node : (node l r).skeleton = node l.skeleton r.skeleton := rfl
+
+end Skeleton
+
+def replicate {α : Type u} (a : α) : BTree Unit → BTree α
+  | leaf () => leaf a
+  | node l r => node (l.replicate a) (r.replicate a)
+
+section Replicate
+
+variable {l r : BTree Unit}
+
+@[simp] theorem replicate_leaf : (leaf ()).replicate a = leaf a := rfl
+
+@[simp] theorem replicate_node :
+    (node l r).replicate a = node (l.replicate a) (r.replicate a) := rfl
+
+end Replicate
+
+def flatMap : BTree α → (α → BTree β) → BTree β
+  | leaf a, f => f a
+  | node l r, f => node (l.flatMap f) (r.flatMap f)
+
+section FlatMap
+
+variable {f : α → BTree β}
+
+@[simp] theorem flatMap_leaf : (leaf a).flatMap f = f a := rfl
+
+@[simp] theorem flatMap_node : (node l r).flatMap f = node (l.flatMap f) (r.flatMap f) := rfl
+
+theorem flatMap_flatMap {g : β → BTree γ} :
+    (t.flatMap f).flatMap g = t.flatMap (fun x => (f x).flatMap g) := by
+  induction t
+  · rfl
+  · exact node_inj_iff.mpr ⟨by assumption, by assumption⟩
+
+@[simp] theorem flatMap_leaf_right : t.flatMap leaf = t := by
+  induction t
+  · rfl
+  · exact node_inj_iff.mpr ⟨by assumption, by assumption⟩
+
+end FlatMap
+
+def map (f : α → β) : BTree α →  BTree β
   | leaf a => leaf (f a)
   | node l r => node (l.map f) (r.map f)
 
 section Map
 
-variable {f : α → β} {h : β → γ}
+variable {f : α → β} {g : β → γ}
 
 @[simp] theorem map_leaf : (leaf a).map f = leaf (f a) := rfl
 
 @[simp] theorem map_node : (node l r).map f = node (l.map f) (r.map f) := rfl
 
-theorem id_map : map id t = t := by
+@[simp] theorem id_map : map id t = t := by
   induction t
-  · simp_rw [map_leaf, id_eq]
-  · simp_rw [map_node, node.injEq]
-    exact And.intro (by assumption) (by assumption)
+  · rfl
+  · exact node_inj_iff.mpr ⟨by assumption, by assumption⟩
 
-theorem comp_map : map (f ∘ g) t = map f (map g t) := by
+@[simp] theorem comp_map : map (g ∘ f) t = map g (map f t) := by
   induction t
-  · simp_rw [map_leaf, Function.comp_apply]
-  · simp_rw [map_node, node.injEq]
-    exact And.intro (by assumption) (by assumption)
+  · rfl
+  · exact node_inj_iff.mpr ⟨by assumption, by assumption⟩
 
-instance : Functor BTree where
-  map := BTree.map
-
-instance : LawfulFunctor BTree where
-  map_const := rfl
-  id_map t := id_map
-  comp_map g h t := by convert comp_map
+@[simp] theorem flatMap_leaf_comp : t.flatMap (leaf ∘ f) = t.map f := by
+  induction t
+  · rfl
+  · exact node_inj_iff.mpr ⟨by assumption, by assumption⟩
 
 end Map
-
-
-
-instance : Monad BTree where
-  pure a := leaf a
-  bind t := _
-
-
-instance : LawfulMonad BTree
 
 def flatten : BTree (BTree α) → BTree α
   | leaf a => a
   | node l r => node (l.flatten) (r.flatten)
 
+section Flatten
 
+variable {t l r : BTree (BTree α )} {a : BTree α}
+
+@[simp] theorem flatten_leaf : (leaf a).flatten = a := rfl
+
+@[simp] theorem flatten_node : (node l r).flatten = node l.flatten r.flatten := rfl
+
+@[simp] theorem flatMap_id : t.flatMap id = t.flatten := by
+  induction t
+  · rfl
+  · exact node_inj_iff.mpr ⟨by assumption, by assumption⟩
+
+end Flatten
+
+def mapConst (a : α) : BTree β → BTree α
+  | leaf _ => leaf a
+  | node l r => node (l.mapConst a) (r.mapConst a)
+
+section MapConst
+
+variable {b : β} {t : BTree β}
+
+@[simp] theorem mapConst_leaf : (leaf b).mapConst a = leaf a := rfl
+
+@[simp] theorem mapConst_node {l r : BTree β} :
+    (node l r).mapConst a = node (l.mapConst a) (r.mapConst a) := rfl
+
+@[simp] theorem map_const : t.map (Function.const β a) = t.mapConst a := by
+  induction t
+  · rfl
+  · exact node_inj_iff.mpr ⟨by assumption, by assumption⟩
+
+@[simp] theorem map_comp_const : map ∘ Function.const β = mapConst (α := α) :=
+  funext (fun _ => funext fun _ => map_const)
+
+@[simp] theorem replicate_skeleton : replicate a t.skeleton = t.mapConst a := by
+  induction t
+  · rfl
+  · exact node_inj_iff.mpr ⟨by assumption, by assumption⟩
+
+theorem flatMap_const_leaf : t.flatMap (Function.const _ (leaf a)) = t.mapConst a := by
+  induction t
+  · rfl
+  · exact node_inj_iff.mpr ⟨by assumption, by assumption⟩
+
+end MapConst
+
+def seq : BTree (α → β) → BTree α →  BTree β
+  | leaf f, leaf a => leaf (f a)
+  | leaf f, node l r => node (l.map f) (r.map f)
+  | node l r, t => node (l.seq t) (r.seq t)
+
+section Seq
+
+variable {sf : BTree (α → β)} {f : α → β}
+
+@[simp] theorem seq_leaf_leaf : (leaf f).seq (leaf a) = leaf (f a) := rfl
+
+@[simp] theorem seq_leaf_node : (leaf f).seq (node l r) = node (l.map f) (r.map f) := rfl
+
+@[simp] theorem seq_node {l r : BTree (α → β)} :
+    (node l r).seq t = node (l.seq t) (r.seq t) := rfl
+
+@[simp] theorem leaf_seq : (leaf f).seq t = t.map f := by cases t <;> rfl
+
+@[simp] theorem flatMap_map : sf.flatMap (t.map ·) = sf.seq t := by
+  induction sf
+  · cases t
+    · rfl
+    · rfl
+  · exact node_inj_iff.mpr ⟨by assumption, by assumption⟩
+
+theorem flatMap_flatMap_leaf_comp : sf.flatMap (fun f => t.flatMap (leaf ∘ f)) = sf.seq t :=
+  (congrArg _ (funext fun _ => flatMap_leaf_comp)).trans flatMap_map
+
+end Seq
+
+def seqLeft : BTree α → BTree β → BTree α
+  | leaf a, leaf _ => leaf a
+  | node l r, leaf _ => node l r
+  | leaf a, node l r => node (l.mapConst a) (r.mapConst a)
+  | node l r, node l' r' => node (l.seqLeft (l'.node r')) (r.seqLeft (l'.node r'))
+
+section SeqLeft
+
+variable {b : β} {s : BTree β}
+
+@[simp] theorem seqLeft_leaf_right : t.seqLeft (leaf b) = t := by
+  cases t <;> rfl
+
+@[simp] theorem seqLeft_leaf_left : (leaf a).seqLeft s = s.mapConst a := by
+  cases s <;> rfl
+
+@[simp] theorem seqLeft_leaf_node {l r : BTree β} : (leaf a).seqLeft (node l r) =
+    node (l.mapConst a) (r.mapConst a) := rfl
+
+@[simp] theorem seqLeft_node_left :
+    (node l r).seqLeft s = node (l.seqLeft s) (r.seqLeft s) := by
+  cases s
+  · simp_rw [seqLeft_leaf_right]
+  · rfl
+
+@[simp] theorem flatMap_mapConst : t.flatMap (s.mapConst ·) = t.seqLeft s := by
+  induction t
+  · simp only [flatMap_leaf, seqLeft_leaf_left]
+  · simp only [flatMap_node, seqLeft_node_left]
+    exact node_inj_iff.mpr ⟨by assumption, by assumption⟩
+
+@[simp] theorem map_const_seq : (map (Function.const β) t).seq s = t.seqLeft s := by
+  induction t
+  · simp only [map_leaf, leaf_seq, map_const, seqLeft_leaf_left]
+  · simp only [flatMap_node, seqLeft_node_left]
+    exact node_inj_iff.mpr ⟨by assumption, by assumption⟩
+
+theorem flatMap_flatMap_const_leaf :
+    t.flatMap (fun a => s.flatMap (Function.const _ (leaf a))) = t.seqLeft s :=
+  (congrArg _ (funext (fun _ => flatMap_const_leaf))).trans flatMap_mapConst
+
+end SeqLeft
+
+def seqRight : BTree α → BTree β → BTree β
+  | leaf _, leaf b => leaf b
+  | leaf _, node l r => node l r
+  | node l r, leaf b => node (l.mapConst b) (r.mapConst b)
+  | node l r, node l' r' => node (l.seqRight (node l' r')) (r.seqRight (node l' r'))
+
+section SeqRight
+
+variable {b : β} {s : BTree β}
+
+@[simp] theorem seqRight_leaf_left : (leaf a).seqRight s = s := by cases s <;> rfl
+
+@[simp] theorem seqRight_leaf_right : t.seqRight (leaf b) = t.mapConst b := by cases t <;> rfl
+
+@[simp] theorem seqRight_node_leaf : (node l r).seqRight (leaf b) =
+    node (l.mapConst b) (r.mapConst b) := rfl
+
+@[simp] theorem seqRight_node_left : (node l r).seqRight s =
+    node (l.seqRight s) (r.seqRight s) := by
+  cases s
+  · simp_rw [seqRight_leaf_right, mapConst_node]
+  · rfl
+
+@[simp] theorem flatMap_const : t.flatMap (Function.const _ s) = t.seqRight s := by
+  induction t
+  · simp only [flatMap_leaf, Function.const_apply, seqRight_leaf_left]
+  · simp only [flatMap_node, seqRight_node_left]
+    exact node_inj_iff.mpr ⟨by assumption, by assumption⟩
+
+@[simp] theorem mapConst_id_seq : (mapConst id t).seq s = t.seqRight s := by
+  induction t
+  · simp only [mapConst_leaf, leaf_seq, id_map, seqRight_leaf_left]
+  · simp only [mapConst_node, seq_node, seqRight_node_left]
+    exact node_inj_iff.mpr ⟨by assumption, by assumption⟩
+
+theorem map_const_id_seq : (map (Function.const _ id) t).seq s = t.seqRight s := by
+  simp_rw [map_const, mapConst_id_seq]
+
+end SeqRight
+
+instance : Monad BTree where
+  pure := leaf
+  bind := flatMap
+  map := map
+  mapConst := mapConst
+  seq t s := t.seq (s ())
+  seqLeft t s := t.seqLeft (s ())
+  seqRight t s := t.seqRight (s ())
+
+section Monad
+
+variable {α  β : Type u} {a : α} {t : BTree α} {s : BTree β} {sf : BTree (α → β)}
+  {tt : BTree (BTree α)}
+
+@[simp] theorem pure_eq_leaf : pure a = leaf a := rfl
+
+@[simp] theorem bind_eq_flatMap : t >>= f = t.flatMap f := rfl
+
+@[simp] theorem map_eq_map {f : α → β} : f <$> t = t.map f := rfl
+
+@[simp] theorem seqLeft_eq_seqLeft : t <* s = t.seqLeft s := rfl
+
+@[simp] theorem seqRight_eq_seqRight : t *> s = t.seqRight s := rfl
+
+@[simp] theorem seq_eq_seq : sf <*> t = sf.seq t := rfl
+
+@[simp] theorem mapConst_eq_replicate_skeleton {a : β} :
+    Functor.mapConst a t = t.mapConst a := rfl
+
+@[simp] theorem join_eq_flatten : Monad.join tt = tt.flatten := flatMap_id
+
+instance : LawfulMonad BTree where
+  map_const := map_comp_const.symm
+  id_map _ := id_map
+  seqLeft_eq _ _ := map_const_seq.symm
+  seqRight_eq _ _ := map_const_id_seq.symm
+  pure_seq _ _ := leaf_seq
+  bind_pure_comp _ _ := flatMap_leaf_comp
+  bind_map _ _ := flatMap_map
+  pure_bind _ _ := flatMap_leaf
+  bind_assoc _ _ _ := flatMap_flatMap
+
+end Monad
+
+instance : Preorder (BTree α) where
+  lt l r := l.height < r.height
+  le l r := l.height ≤ r.height
+  le_refl t := le_refl (t.height)
+  le_trans _ l r htl (hlr : l.height ≤ r.height) := le_trans htl hlr
+  lt_iff_le_not_le _ _ := lt_iff_le_not_le (α := ℕ)
+
+@[simp] theorem height_lt_height : l.height < r.height ↔ l < r := Iff.rfl
+@[simp] theorem height_le_height : l.height ≤ r.height ↔ l ≤ r := Iff.rfl
+
+instance : @DecidableRel (BTree α) (· < ·) :=
+  fun _ _ => decidable_of_iff _ height_lt_height
+
+theorem not_IsPartialOrder [Nonempty α] : ¬ IsPartialOrder (BTree α) (· ≤ ·) := fun h => by
+  have H := h.antisymm (node (leaf (Classical.arbitrary α))
+    (node (leaf (Classical.arbitrary α)) (leaf (Classical.arbitrary α))))
+    (node
+    (node (leaf (Classical.arbitrary α)) (leaf (Classical.arbitrary α)))
+    (leaf (Classical.arbitrary α)))
+  simp_rw [← height_le_height, height_node, height_leaf, max_self, zero_add, Nat.max_zero,
+    Nat.zero_max, le_rfl, true_implies, node_inj_iff, leaf_ne_node, false_and] at H
 
 end BTree
+
+def BTreeStack (α : Type u) := {l : List (BTree α) // l.Sorted (· < ·)}
+
+namespace BTreeStack
+
+open BTree
+
+variable {l r a : BTree α} {s t : BTreeStack α}
+
+instance [Repr α] : Repr (BTreeStack α) := instReprSubtype
+instance [DecidableEq α] : DecidableEq (BTreeStack α) := Subtype.instDecidableEq
+
+def ofList (l : List (BTree α)) (hl : l.Sorted (· < ·)) : BTreeStack α := Subtype.mk l hl
+
+section OfList
+
+variable {s t : List (BTree α)}
+
+theorem ofList_injective (hs : s.Sorted (· < ·)) (ht : t.Sorted (· < ·)) :
+ ofList s hs = ofList t ht → s = t := by
+  rintro ⟨_, _⟩
+  exact rfl
+
+@[simp] theorem ofList_inj_iff {hs: s.Sorted (· < ·)} {ht: t.Sorted (· < ·)} :
+    ofList s hs = ofList t ht ↔ s = t := Subtype.mk_eq_mk
+
+instance : Inhabited (BTreeStack α) := ⟨ofList [] List.sorted_nil⟩
+
+end OfList
+
+def toList (l : BTreeStack α) : List (BTree α) := l.1
+
+section ToList
+
+@[simp] theorem isSorted_toList : s.toList.Sorted (· < ·) := s.2
+
+@[simp] theorem toList_ofList : toList (ofList ts hs) = ts := rfl
+
+@[simp] theorem ofList_toList (hs := isSorted_toList) :
+    ofList (toList ts) hs = ts := rfl
+
+theorem toList_injective : Function.Injective (toList (α := α)) :=
+    fun _ _ => Subtype.ext
+
+@[simp] theorem toList_inj_iff : s.toList = t.toList ↔ s = t :=
+  ⟨fun h => toList_injective h, congrArg _⟩
+
+theorem of_toList_eq_cons (h : s.toList = a :: ts) : ts.Sorted (· < ·) :=
+  List.Sorted.of_cons (h ▸ isSorted_toList)
+
+theorem rel_of_toList_eq_cons (h : s.toList = a :: ts) : ∀ b ∈ ts, a < b :=
+  List.rel_of_sorted_cons (h ▸ isSorted_toList)
+
+theorem nodup_toList : s.toList.Nodup := List.Sorted.nodup isSorted_toList
+
+end ToList
+
+instance : Membership (BTree α) (BTreeStack α) where
+  mem l a := a ∈ l.toList
+
+section Mem
+
+@[simp] theorem mem_toList_iff : a ∈ s.toList ↔ a ∈ s := Iff.rfl
+
+@[simp] theorem mem_ofList_iff {s : List (BTree α)} {hs : s.Sorted (· < ·)} :
+    a ∈ ofList s hs ↔ a ∈ s := Iff.rfl
+
+end Mem
+
+def nil : BTreeStack α := ofList [] List.sorted_nil
+
+section Nil
+
+@[simp] theorem toList_nil : (nil : BTreeStack α).toList = [] := rfl
+
+@[simp] theorem ofList_nil : ofList ([] : List (BTree α)) List.sorted_nil = nil := rfl
+
+@[simp] theorem toList_eq_nil_iff : s.toList = [] ↔ s = nil := by
+  rw [← toList_nil, toList_inj_iff]
+
+@[simp] theorem ofList_eq_nil_iff {s : List (BTree α)} {hs : s.Sorted (· < ·)} :
+    ofList s hs = nil ↔ s = [] := by
+  rw [← ofList_nil, ofList_inj_iff]
+
+
+@[simp] theorem toList_ne_nil_iff : s.toList ≠ [] ↔ s ≠ nil := toList_eq_nil_iff.not
+
+@[simp] theorem ofList_ne_nil_iff {s : List (BTree α)} {hs : s.Sorted (· < ·)} :
+    ofList s hs ≠ nil ↔ s ≠ [] := ofList_eq_nil_iff.not
+
+@[simp] theorem not_mem_nil {t : BTree α} : ¬ t ∈ nil := List.not_mem_nil _
+
+theorem ne_nil_of_mem (ht : a ∈ t) : t ≠ nil := fun h => (not_mem_nil (h ▸ ht)).elim
+
+end Nil
+
+def cons (a : BTree α) (s : BTreeStack α) (has : ∀ b ∈ s, a < b) : BTreeStack α :=
+  ofList (a :: s.toList) <| List.sorted_cons.mpr ⟨has, s.isSorted_toList⟩
+
+section Cons
+
+variable {has : ∀ b ∈ s, a < b}
+
+@[simp] theorem cons_inj_iff : cons a s has = cons a' s' has' ↔ ((a = a') ∧ s = s') := by
+  refine ⟨fun h => ?_, fun h => ?_⟩
+  · unfold cons at h
+    have H := Subtype.mk_eq_mk.mp h
+    simp_rw [List.cons.injEq, toList_inj_iff] at H
+    exact H
+  · simp_rw [h.1, h.2]
+
+@[simp] theorem toList_cons : (cons a s has).toList = a :: s.toList := rfl
+
+@[simp] theorem ofList_cons {s : List (BTree α)} {haas}
+    (hs := haas.of_cons) (has := List.rel_of_sorted_cons haas) :
+    ofList (a :: s) haas = cons a (ofList s hs) has := rfl
+
+@[simp] theorem mem_cons : b ∈ cons a s has ↔ b = a ∨ b ∈ s := List.mem_cons
+
+theorem mem_cons_self : a ∈ cons a s has := List.mem_cons_self _ _
+
+theorem mem_cons_of_mem (h : b ∈ s) : b ∈ cons a s has := List.mem_cons_of_mem _ h
+
+end Cons
+
+section NilCons
+
+variable {has : ∀ b ∈ s, a < b}
+
+@[simp] theorem nil_ne_cons : nil ≠ cons a s has := Subtype.coe_ne_coe.mp List.noConfusion
+
+@[simp] theorem cons_ne_nil : cons a s has ≠ nil := Subtype.coe_ne_coe.mp List.noConfusion
+
+@[elab_as_elim] def nilConsInduction {motive : BTreeStack α → Sort _}
+    (nil : motive nil)
+    (cons : (s : BTreeStack α) → (a : BTree α) →  (has : ∀ b ∈ s, a < b) →
+     motive s → motive (cons a s has)) (t : BTreeStack α) : motive t :=
+  match t with
+  | ⟨[], _⟩ => nil
+  | ⟨a :: s, has⟩ =>
+    cons (ofList s has.of_cons) a (List.rel_of_sorted_cons has) (nilConsInduction nil cons _)
+  termination_by t.toList.length
+  decreasing_by exact Nat.lt_succ_self _
+
+@[simp] theorem nilConsInduction_nil {motive : BTreeStack α → Sort _}
+    {nil : motive nil}
+    {cons : (s : BTreeStack α) → (a : BTree α) → (has : ∀ b ∈ s, a < b) →
+     motive s → motive (cons a s has)} :
+      nilConsInduction nil cons BTreeStack.nil = nil := by
+  unfold nilConsInduction
+  rfl
+
+@[simp] theorem nilConsInduction_cons {motive : BTreeStack α → Sort _}
+    {nil : motive nil}
+    {cons : (s : BTreeStack α) → (a : BTree α) → (has : ∀ b ∈ s, a < b) →
+     motive s → motive (cons a s has)} :
+      nilConsInduction nil cons (BTreeStack.cons a s has) =
+      cons s a has (nilConsInduction nil cons s) := by
+  conv =>
+    lhs
+    unfold BTree.node nilConsInduction
+  rfl
+
+@[elab_as_elim] def nilConsCases {motive : BTreeStack α → Sort _}
+    (nil : motive nil)
+    (cons : (s : BTreeStack α) → (a : BTree α) → (has : ∀ b ∈ s, a < b) →
+     motive (cons a s has)) (t : BTreeStack α) : motive t :=
+     nilConsInduction nil (fun a s has _ => cons a s has) t
+
+@[simp] theorem nilConsCases_nil {motive : BTreeStack α → Sort _}
+    {nil : motive nil}
+    {cons : (s : BTreeStack α) → (a : BTree α) → (has : ∀ b ∈ s, a < b) →
+     motive (cons a s has)} :
+      nilConsCases nil cons BTreeStack.nil = nil := nilConsInduction_nil
+
+@[simp] theorem nilConsCases_cons {motive : BTreeStack α → Sort _}
+    {nil : motive nil}
+    {cons : (s : BTreeStack α) → (a : BTree α) → (has : ∀ b ∈ s, a < b) →
+     motive (cons a s has)} :
+      nilConsCases nil cons (BTreeStack.cons a s has) =
+      cons s a has := nilConsInduction_cons
+
+theorem nil_or_exists_cons (t : BTreeStack α) :
+    t = nil ∨ (∃ a s has, t = cons a s has) := by
+  cases t using nilConsCases
+  · exact Or.inl rfl
+  · exact Or.inr ⟨_, _, _, rfl⟩
+
+end NilCons
+
+
+def singleton (a : BTree α) : BTreeStack α := cons a nil (fun _ H => (not_mem_nil H).elim)
+
+section Singleton
+
+theorem singleton_def : singleton a = cons a nil (fun _ H => (not_mem_nil H).elim) := rfl
+
+@[simp] theorem ofList_singleton : ofList [a] (List.sorted_singleton a) = singleton a := rfl
+
+@[simp] theorem toList_singleton : (singleton a).toList = [a] := rfl
+
+@[simp] theorem cons_eq_singleton_iff : cons a s has = singleton b ↔ a = b ∧ s = nil := by
+  rw [singleton_def, cons_inj_iff]
+
+@[simp] theorem singleton_ne_nil : singleton a ≠ nil := cons_ne_nil
+
+@[simp] theorem nil_ne_singleton : nil ≠ singleton a := singleton_ne_nil.symm
+
+theorem eq_of_mem_singleton : b ∈ singleton a → b = a := List.eq_of_mem_singleton
+
+@[simp] theorem mem_singleton : b ∈ singleton a ↔ b = a := List.mem_singleton
+
+theorem mem_singleton_self (a : BTree α) : a ∈ singleton a := List.mem_singleton_self a
+
+end Singleton
+
+def getFirst (s : BTreeStack α) : s ≠ nil → BTree α :=
+    s.nilConsCases (fun h => h.irrefl.elim) (fun _ a _ _ => a)
+
+section GetFirst
+
+@[simp] theorem getFirst_cons (h := cons_ne_nil) :
+    (cons a s has).getFirst h = a := congrFun nilConsCases_cons h
+
+theorem getFirst_eq_iff : s.getFirst hs = a ↔ ∃ s' has', s = cons a s' has' := by
+  cases s using nilConsCases
+  · exact hs.irrefl.elim
+  · simp_rw [getFirst_cons, cons_inj_iff, exists_and_left, exists_prop, exists_eq_right',
+      iff_self_and]
+    exact fun h => h ▸ by assumption
+
+@[simp] theorem getFirst_ofList {s : List (BTree α)} {hs₁ : s.Sorted (· < ·)}
+    {hs₂ : ofList s hs₁ ≠ nil} (hs₃ := (ofList_ne_nil_iff (hs := hs₁)).mp hs₂) :
+    (ofList s hs₁).getFirst hs₂ = s.head hs₃ := by
+  cases s with | nil => _ | cons a s => _
+  · exact hs₃.irrefl.elim
+  · simp_rw [getFirst_eq_iff, List.head_cons]
+    exact ⟨ofList s _, List.rel_of_sorted_cons hs₁, ofList_cons⟩
+
+@[simp] theorem head_toList (h : s ≠ nil) (h' := toList_ne_nil_iff.mpr h) :
+    s.toList.head h' = s.getFirst h := by
+  cases s using nilConsCases
+  · exact h.irrefl.elim
+  · simp_rw [toList_cons, List.head_cons, getFirst_cons]
+
+theorem getFirst_mem (hs : s ≠ nil) : s.getFirst hs ∈ s := by
+  cases s using nilConsCases
+  · exact hs.irrefl.elim
+  · simp_rw [getFirst_cons]
+    exact mem_cons_self
+
+theorem getFirst_le : ∀ (ha : a ∈ s), s.getFirst (fun h => (not_mem_nil (h ▸ ha))) ≤ a := by
+  cases s using nilConsCases with | nil => _ | cons s a has => _
+  · exact fun ha => (not_mem_nil ha).elim
+  · simp_rw [getFirst_cons, mem_cons]
+    exact fun h => h.elim (fun H => H ▸ le_rfl) (fun hs => (has _ hs).le)
+
+theorem getFirst_lt : ∀ b ∈ s, (cons a s has).getFirst cons_ne_nil < b := by
+  simp_rw [getFirst_cons]
+  assumption
+
+
+end GetFirst
+
+def getLast (s : BTreeStack α) : s ≠ nil → BTree α :=
+  s.nilConsCases (fun h => h.irrefl.elim) (fun s => s.nilConsInduction (fun a _ _ => a)
+  (fun _ a has getLast _ _ _ => getLast a has cons_ne_nil))
+
+section GetLast
+
+@[simp] theorem getLast_cons_nil (ha := fun _ hb => (not_mem_nil hb).elim ) (h := cons_ne_nil) :
+    (cons a nil ha).getLast h = a := by
+  unfold getLast
+  rw [nilConsCases_cons, nilConsInduction_nil]
+
+@[simp] theorem getLast_singleton (h := singleton_ne_nil) : (singleton a).getLast h = a := by
+  simp_rw [singleton_def, getLast_cons_nil]
+
+@[simp] theorem getLast_cons_cons (hbs : ∀ c ∈ s, b < c)
+    (has : ∀ c ∈ cons b s hbs, a < c) (h₁ := cons_ne_nil) (h₂ := cons_ne_nil) :
+    (cons a (cons b s hbs) has).getLast h₁ = (cons b s hbs).getLast h₂ := by
+  unfold getLast
+  simp_rw [nilConsCases_cons, nilConsInduction_cons]
+
+@[simp] theorem getLast_cons_of_ne_nil {has : ∀ b ∈ s, a < b} (hs : s ≠ nil) (h := cons_ne_nil) :
+    (cons a s has).getLast h = s.getLast hs := by
+  cases s using nilConsCases
+  · exact hs.irrefl.elim
+  · exact getLast_cons_cons _ _
+
+@[simp] theorem getLast_toList (h : s ≠ nil) (h' := toList_ne_nil_iff.mpr h) :
+    s.toList.getLast h' = s.getLast h := by
+  induction s using nilConsInduction with | nil => _ | cons s a has IH => _
+  · exact h.irrefl.elim
+  · simp_rw [toList_cons]
+    by_cases hs : s = nil
+    · subst hs
+      simp_rw [toList_nil, List.getLast_singleton, getLast_cons_nil]
+    · simp_rw [getLast_cons_of_ne_nil hs, List.getLast_cons (toList_ne_nil_iff.mpr hs)]
+      exact IH _
+
+@[simp] theorem getLast_ofList {s : List (BTree α)} {hs₁ : s.Sorted (· < ·)}
+    {hs₂ : ofList s hs₁ ≠ nil} (hs₃ := (ofList_ne_nil_iff (hs := hs₁)).mp hs₂) :
+    (ofList s hs₁).getLast hs₂ = s.getLast hs₃ := by
+  induction s with | nil => _ | cons a s IH => _
+  · exact hs₃.irrefl.elim
+  · by_cases hs : s = []
+    · subst s
+      simp only [List.sorted_nil, List.not_mem_nil, IsEmpty.forall_iff, implies_true,
+        ofList_cons, ofList_nil, getLast_cons_nil, List.getLast_singleton]
+    · simp_rw [List.getLast_cons hs, ofList_cons (haas := hs₁),
+        getLast_cons_of_ne_nil (ofList_ne_nil_iff.mpr hs)]
+      exact IH _
+
+theorem getLast_mem (hs : s ≠ nil) : s.getLast hs ∈ s := by
+  induction s using nilConsInduction with | nil => _ | cons s a has IH => _
+  · exact hs.irrefl.elim
+  · by_cases hs : s = nil
+    · subst hs
+      simp_rw [getLast_cons_nil, mem_cons_self]
+    · simp_rw [getLast_cons_of_ne_nil hs, mem_cons]
+      exact Or.inr (IH _)
+
+theorem getLast_cons_mem {has} (h := cons_ne_nil) (hs : s ≠ nil) :
+    (cons a s has).getLast h ∈ s := by
+  rw [getLast_cons_of_ne_nil hs]
+  exact getLast_mem _
+
+theorem le_getLast : ∀ (ha : a ∈ s), a ≤ s.getLast (fun h => (not_mem_nil (h ▸ ha))) := by
+  induction s using nilConsInduction with | nil => _ | cons s a has IH => _
+  · exact fun hb => (not_mem_nil hb).elim
+  · by_cases hs : s = nil
+    · subst hs
+      simp_rw [mem_cons, not_mem_nil, or_false, getLast_cons_nil]
+      exact fun h => h ▸ le_rfl
+    · simp_rw [getLast_cons_of_ne_nil hs, mem_cons]
+      exact fun h => h.elim (fun H => H ▸ (has _ (getLast_mem hs)).le) IH
+
+theorem cons_cons_getFirst_lt_getLast {has hbs} (hs := cons_ne_nil) :
+    (cons b (cons a s has) hbs).getFirst hs < (cons b (cons a s has) hbs).getLast hs := by
+  simp_rw [getFirst_cons]
+  rw [getLast_cons_cons]
+  · by_cases hs : s = nil
+    · subst hs
+      simp_rw [getLast_cons_nil]
+      exact hbs _ mem_cons_self
+    · rw [getLast_cons_of_ne_nil hs]
+      exact hbs _ (mem_cons_of_mem (getLast_mem hs))
+
+theorem getFirst_le_getLast (hs : s ≠ nil) : s.getFirst hs ≤ s.getLast hs := by
+  cases s using nilConsCases with | nil => _ | cons s _ _ => _
+  · exact hs.irrefl.elim
+  · cases s using nilConsCases
+    · simp_rw [getFirst_cons, getLast_cons_nil, le_refl]
+    · exact cons_cons_getFirst_lt_getLast.le
+
+end GetLast
+
+
+def length (s : BTreeStack α) : ℕ :=  s.nilConsInduction 0 (fun _ _ _ => (· + 1))
+
+section Length
+
+@[simp] theorem length_nil : length (nil : BTreeStack α) = 0 := nilConsInduction_nil
+
+@[simp] theorem length_cons : (cons a s has).length = s.length + 1 := nilConsInduction_cons
+
+@[simp] theorem length_toList : s.toList.length = s.length := by
+  induction s using nilConsInduction
+  · simp_rw [toList_nil, List.length_nil, length_nil]
+  · simp only [toList_cons, List.length_cons, length_cons, add_left_inj]
+    assumption
+
+@[simp] theorem length_ofList {s : List (BTree α)} {hs : s.Sorted (· < ·)} :
+    (ofList s hs).length = s.length := by
+  induction s with | nil => _ | cons _ _ IH => _
+  · simp only [ofList_nil, length_nil, List.length_nil]
+  · simp_rw [List.length_cons, ofList_cons (haas := hs), length_cons, add_left_inj]
+    exact IH
+
+@[simp] theorem length_eq_zero : s.length = 0 ↔ s = nil := by
+  rw [← length_toList, List.length_eq_zero, toList_eq_nil_iff]
+
+instance : NeZero ((cons a s has).length) := ⟨length_cons ▸ Nat.succ_ne_zero _⟩
+
+theorem length_ne_zero : s.length ≠ 0 ↔ s ≠ nil := length_eq_zero.not
+
+theorem length_pos : 0 < s.length ↔ s ≠ nil := Nat.pos_iff_ne_zero.trans length_ne_zero
+
+theorem exists_of_length_ne_zero (ht : t.length ≠ 0) : ∃ a s has, t = cons a s has := by
+  cases t using nilConsCases
+  · exact (ht length_nil).elim
+  · exact ⟨_, _, _, rfl⟩
+
+theorem length_singleton : (singleton a).length = 1 := by
+  rw [singleton_def, length_cons, length_nil]
+
+theorem length_eq_one : s.length = 1 ↔ ∃ a, s = singleton a := by
+  cases s using nilConsCases
+  · simp_rw [length_nil, zero_ne_one, nil_ne_singleton, exists_false]
+  · simp_rw [length_cons, add_left_eq_self, length_eq_zero,
+      cons_eq_singleton_iff, exists_and_right, exists_eq', true_and]
+
+theorem getFirst_lt_getLast_iff_one_lt_length :
+    s.getFirst hs < s.getLast hs ↔ 1 < s.length := by
+  cases s using nilConsCases with | nil => _ | cons s _ _ => _
+  · exact hs.irrefl.elim
+  · simp_rw [length_cons, lt_add_iff_pos_left]
+    cases s using nilConsCases
+    · simp_rw [getLast_cons_nil, getFirst_cons, length_nil, lt_irrefl]
+    · simp_rw [cons_cons_getFirst_lt_getLast, length_cons, add_pos_iff, zero_lt_one, or_true]
+
+end Length
+
+def minHeight (s : BTreeStack α) : ℕ := s.nilConsCases 0 (fun _ a _ => a.height)
+
+section MinHeight
+
+@[simp] theorem minHeight_nil : (nil : BTreeStack α).minHeight = 0 := nilConsCases_nil
+
+@[simp] theorem minHeight_cons : (cons a s has).minHeight = a.height := nilConsCases_cons
+
+@[simp] theorem minHeight_singleton : (singleton a).minHeight = a.height := by
+  rw [singleton_def, minHeight_cons]
+
+theorem minHeight_eq_getFirst_height (hs) : s.minHeight = (s.getFirst hs).height := by
+  cases s using nilConsCases
+  · exact hs.irrefl.elim
+  · simp_rw [getFirst_cons,  minHeight_cons]
+
+theorem minHeight_le : ∀ a ∈ s, s.minHeight ≤ a.height := by
+  intro a ha
+  simp_rw [minHeight_eq_getFirst_height (ne_nil_of_mem ha), height_le_height]
+  exact getFirst_le ha
+
+end MinHeight
+
+def maxHeight (s : BTreeStack α) : ℕ :=
+  s.nilConsCases 0 (fun s => s.nilConsInduction (fun a _ => a.height)
+  (fun _ a has maxHeight _ _ => maxHeight a has))
+
+section MaxHeight
+
+@[simp] theorem maxHeight_nil : (nil : BTreeStack α).maxHeight = 0 := nilConsCases_nil
+
+@[simp] theorem maxHeight_cons_nil (ha := fun _ h => (not_mem_nil h).elim) :
+    (cons a nil ha).maxHeight = a.height := by
+  exact nilConsCases_cons.trans (nilConsInduction_nil ▸ rfl)
+
+@[simp] theorem maxHeight_singleton : (singleton a).maxHeight = a.height := by
+  rw [singleton_def, maxHeight_cons_nil]
+
+@[simp] theorem maxHeight_cons_cons :
+    (cons a (cons b s hbs) has).maxHeight = (cons b s hbs).maxHeight :=
+  nilConsCases_cons.trans (nilConsInduction_cons ▸ Eq.symm nilConsInduction_cons)
+
+@[simp] theorem maxHeight_cons_of_ne_nil (hs : s ≠ nil) :
+    (cons a s has).maxHeight = s.maxHeight := by
+  cases s using nilConsCases
+  · exact hs.irrefl.elim
+  · simp_rw [maxHeight_cons_cons]
+
+theorem maxHeight_eq_getLast_height (hs) : s.maxHeight = (s.getLast hs).height := by
+  induction s using nilConsInduction with | nil => _ | cons s a has IH => _
+  · exact hs.irrefl.elim
+  · by_cases hs : s = nil
+    · subst hs
+      simp_rw [getLast_cons_nil, maxHeight_cons_nil]
+    · simp_rw [getLast_cons_of_ne_nil hs, maxHeight_cons_of_ne_nil hs]
+      exact IH hs
+
+theorem le_maxHeight : ∀ a ∈ s, a.height ≤ s.maxHeight := by
+  intro a ha
+  simp_rw [maxHeight_eq_getLast_height (hs := ne_nil_of_mem ha), height_le_height]
+  exact le_getLast ha
+
+theorem minHeight_le_maxHeight : s.minHeight ≤ s.maxHeight := by
+  by_cases hs : s = nil
+  · subst hs
+    simp only [minHeight_nil, maxHeight_nil, le_refl]
+  · simp_rw [maxHeight_eq_getLast_height hs, minHeight_eq_getFirst_height hs,
+      height_le_height]
+    exact getFirst_le_getLast hs
+
+theorem length_le_maxHeight_sub_minHeight : s.length ≤ (s.maxHeight - s.minHeight) + 1 := by
+  induction s using nilConsInduction with | nil => _ | cons s a has IH => _
+  · simp_rw [length_nil, maxHeight_nil, minHeight_nil, tsub_zero, zero_add, zero_le_one]
+  · by_cases hs : s = nil
+    · subst hs
+      simp
+    · simp_rw [maxHeight_cons_of_ne_nil hs, minHeight_cons, length_cons, Nat.succ_le_succ_iff]
+      refine IH.trans (Nat.succ_le_of_lt (Nat.sub_lt_sub_left ?_ ?_))
+      · simp_rw [maxHeight_eq_getLast_height hs]
+        exact has _ (getLast_mem hs)
+      · simp_rw [minHeight_eq_getFirst_height hs]
+        exact has _ (getFirst_mem hs)
+
+end MaxHeight
+
+def get (s : BTreeStack α) : Fin (s.length) → BTree α := s.toList.get
+
+section Get
+
+instance : GetElem (BTreeStack α) ℕ (BTree α) fun as i => i < as.length where
+  getElem as i h := as.get ⟨i, h⟩
+
+
+instance : GetElem (BTreeStack α) ℕ (Option (BTree α)) fun as i => i < as.length where
+  getElem as i h := as.get ⟨i, h⟩
+
+end Get
+
+
+def count (s : BTreeStack α) : ℕ :=
+  s.nilConsInduction 0 (fun _ a _ m => m + a.count)
+
+
+
+def push (s : BTreeStack α) :
+    (b : BTree α) → (has : ∀ a ∈ s, b.height ≤ a.height) → BTreeStack α :=
+  s.nilConsInduction (fun b _ => singleton b)
+  (fun a s has push b hbs => if hab : a.height = b.height then
+  push (node a b) (fun _ h => height_node ▸ Nat.succ_le_of_lt (hab ▸ Nat.max_self _ ▸ (has _ h)))
+  else cons b (cons a s has) (fun _ h => (mem_cons.mp h).elim
+    (fun h => h ▸ lt_of_le_of_ne' (hbs _ mem_cons_self) hab)
+    (fun h => (hbs _ mem_cons_self).trans_lt (has _ h))))
+
+def pushLeaf (s : BTreeStack α) (a : α) : BTreeStack α := s.push (leaf a) (fun _ _ => zero_le _)
+
+def pushTuple (s : BTreeStack α) (bs : Fin k → α) : BTreeStack α :=
+    Fin.foldl k (fun p i => p.pushLeaf (bs i)) s
+
+def ofTuple (bs : Fin k → α) : BTreeStack α := pushTuple nil bs
+
+end BTreeStack
 
 def PBTree (α : Type u) := Subtype (BTree.isPerfect (α := α))
 
@@ -297,7 +1104,7 @@ theorem leaf_injective : Function.Injective (leaf (α := α)) := fun _ _ H => by
   rw [← leaf.injEq]
   exact Subtype.mk_eq_mk.mp H
 
-@[simp] theorem leaf_inj_iff : leaf a = leaf b ↔ a = b :=
+theorem leaf_inj_iff : leaf a = leaf b ↔ a = b :=
   ⟨fun h => leaf_injective h, congrArg _⟩
 
 @[simp] theorem height_leaf : height (leaf a) = 0 := rfl
@@ -313,7 +1120,7 @@ section Node
 
 variable {hlr : l.height = r.height}
 
-@[simp] theorem node_inj_iff : node l r hlr = node l' r' hlr' ↔ ((l = l') ∧ r = r') := by
+theorem node_inj_iff : node l r hlr = node l' r' hlr' ↔ ((l = l') ∧ r = r') := by
   refine ⟨fun h => ?_, fun h => ?_⟩
   · unfold node at h
     have H := Subtype.mk_eq_mk.mp h
@@ -339,10 +1146,10 @@ theorem height_node_eq_succ_iff_height_right_eq :
     (node l r hlr).height = n + 1 ↔ r.height = n := by
   simp_rw [height_node_right, add_left_inj]
 
-@[simp] theorem left_height_lt : l.height < (node l r hlr).height := by
+theorem left_height_lt : l.height < (node l r hlr).height := by
   simp_rw [height_node_left, Nat.lt_succ_self]
 
-@[simp] theorem right_height_lt : r.height < (node l r hlr).height := by
+theorem right_height_lt : r.height < (node l r hlr).height := by
   simp_rw [height_node_right, Nat.lt_succ_self]
 
 instance : NeZero (node l r hlr).height := ⟨Nat.noConfusion⟩
@@ -431,31 +1238,28 @@ theorem exists_of_height_eq_succ (ht : t.height = n + 1) :
 
 end LeafNode
 
-instance : Preorder (PBTree α) where
-  lt l r := l.height < r.height
-  le l r := l.height ≤ r.height
-  le_refl t := le_refl (t.height)
-  le_trans _ l r htl (hlr : l.height ≤ r.height) := le_trans htl hlr
-  lt_iff_le_not_le _ _ := lt_iff_le_not_le (α := ℕ)
+instance : Preorder (PBTree α) := Subtype.preorder _
 
-theorem lt_iff_height_lt_height : l < r ↔ l.height < r.height := Iff.rfl
-theorem le_iff_height_le_height : l ≤ r ↔ l.height ≤ r.height := Iff.rfl
+@[simp] theorem lt_iff_height_lt_height : l < r ↔ l.height < r.height := Iff.rfl
+@[simp] theorem le_iff_height_le_height : l ≤ r ↔ l.height ≤ r.height := Iff.rfl
 
 instance [Subsingleton α] : PartialOrder (PBTree α) where
   le_antisymm l r hlr hrl := by
     rw [le_iff_height_le_height] at hlr hrl
     have h := le_antisymm hlr hrl
     clear hlr hrl
-    induction l using leafNodeInduction generalizing r with | leaf => _ | node l r hlr IHL IHR => _
+    induction l using leafNodeInduction generalizing r with
+      | leaf => _ | node _ _ _ IHL IHR => _
     · cases r using leafNodeCases
       · simp_rw [leaf_inj_iff]
         exact Subsingleton.elim _ _
       · simp_rw [height_node_right, height_leaf, (Nat.succ_ne_zero _).symm] at h
-    · cases r using leafNodeCases with | leaf => _ | node l' r' hlr' => _
+    · cases r using leafNodeCases
       · simp_rw [height_node_right, height_leaf, (Nat.succ_ne_zero _)] at h
       · simp_rw [node_inj_iff]
         simp_rw [height_node_right, add_left_inj] at h
-        exact ⟨IHL _ (hlr.trans <| h.trans hlr'.symm), IHR _ h⟩
+        refine ⟨IHL _ ?_, IHR _ (by assumption)⟩
+        omega
 
 theorem not_IsPartialOrder [Nontrivial α] : ¬ IsPartialOrder (PBTree α) (· ≤ ·) := fun h => by
   rcases Nontrivial.exists_pair_ne (α := α) with ⟨x, y, hxy⟩
@@ -640,12 +1444,12 @@ theorem toListPBTree_eq_nil_iff : s.toListPBTree = [] ↔ s = nil := by
 
 end Nil
 
-def cons (a : PBTree α) (s : PBTreeStack α) (has : ∀ b ∈ s, a.height < b.height) : PBTreeStack α :=
+def cons (a : PBTree α) (s : PBTreeStack α) (has : ∀ b ∈ s, a < b) : PBTreeStack α :=
   ⟨a :: s.toListPBTree, List.sorted_cons.mpr ⟨has, s.isSorted_toListPBTree⟩⟩
 
 section Cons
 
-variable {has : ∀ b ∈ s, a.height < b.height}
+variable {has : ∀ b ∈ s, a < b}
 
 @[simp] theorem cons_inj_iff : cons a s has = cons a' s' has' ↔ ((a = a') ∧ s = s') := by
   refine ⟨fun h => ?_, fun h => ?_⟩
@@ -673,7 +1477,7 @@ end Cons
 
 section NilCons
 
-variable {has : ∀ b ∈ s, a.height < b.height}
+variable {has : ∀ b ∈ s, a < b}
 
 @[simp] theorem nil_ne_cons : nil ≠ cons a s has := Subtype.coe_ne_coe.mp List.noConfusion
 
@@ -681,7 +1485,7 @@ variable {has : ∀ b ∈ s, a.height < b.height}
 
 @[elab_as_elim] def nilConsInduction {motive : PBTreeStack α → Sort _}
     (nil : motive nil)
-    (cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a.height < b.height) →
+    (cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a < b) →
      motive s → motive (cons a s has)) (t : PBTreeStack α) : motive t :=
   match t with
   | ⟨[], _⟩ => nil
@@ -692,7 +1496,7 @@ variable {has : ∀ b ∈ s, a.height < b.height}
 
 theorem nilConsInduction_nil {motive : PBTreeStack α → Sort _}
     {nil : motive nil}
-    {cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a.height < b.height) →
+    {cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a < b) →
      motive s → motive (cons a s has)} :
       nilConsInduction nil cons PBTreeStack.nil = nil := by
   unfold nilConsInduction
@@ -700,7 +1504,7 @@ theorem nilConsInduction_nil {motive : PBTreeStack α → Sort _}
 
 theorem nilConsInduction_cons {motive : PBTreeStack α → Sort _}
     {nil : motive nil}
-    {cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a.height < b.height) →
+    {cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a < b) →
      motive s → motive (cons a s has)} :
       nilConsInduction nil cons (PBTreeStack.cons a s has) =
       cons a s has (nilConsInduction nil cons s) := by
@@ -711,19 +1515,19 @@ theorem nilConsInduction_cons {motive : PBTreeStack α → Sort _}
 
 @[elab_as_elim] def nilConsCases {motive : PBTreeStack α → Sort _}
     (nil : motive nil)
-    (cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a.height < b.height) →
+    (cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a < b) →
      motive (cons a s has)) (t : PBTreeStack α) : motive t :=
      nilConsInduction nil (fun a s has _ => cons a s has) t
 
 theorem nilConsCases_nil {motive : PBTreeStack α → Sort _}
     {nil : motive nil}
-    {cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a.height < b.height) →
+    {cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a < b) →
      motive (cons a s has)} :
       nilConsCases nil cons PBTreeStack.nil = nil := nilConsInduction_nil
 
 theorem nilConsCases_cons {motive : PBTreeStack α → Sort _}
     {nil : motive nil}
-    {cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a.height < b.height) →
+    {cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a < b) →
      motive (cons a s has)} :
       nilConsCases nil cons (PBTreeStack.cons a s has) =
       cons a s has := nilConsInduction_cons
@@ -767,27 +1571,6 @@ theorem eq_of_mem_singleton : b ∈ singleton a → b = a := List.eq_of_mem_sing
 @[simp] theorem mem_singleton_self (a : PBTree α) : a ∈ singleton a := List.mem_singleton_self a
 
 end Singleton
-
-def singleLeaf (a : α) : PBTreeStack α := singleton (leaf a)
-
-section SingleLeaf
-
-@[simp] theorem cons_eq_singleLeaf_iff :
-  cons a s has = singleLeaf b ↔ a = leaf b ∧ s = nil := cons_eq_singleton_iff
-
-theorem length_singleLeaf : (singleLeaf a).length = 1 := rfl
-
-@[simp] theorem nil_ne_singleLeaf : nil ≠ singleLeaf a := nil_ne_singleton
-
-@[simp] theorem singleLeaf_ne_nil : singleton a ≠ nil := singleton_ne_nil
-
-theorem eq_of_mem_singleLeaf {a : α} : b ∈ singleLeaf a → b = leaf a := List.eq_of_mem_singleton
-
-@[simp] theorem mem_singleLeaf {a : α} : b ∈ singleLeaf a ↔ b = leaf a := List.mem_singleton
-
-@[simp] theorem mem_singleLeaf_self (a : α) : leaf a ∈ singleLeaf a := mem_singleton_self (leaf a)
-
-end SingleLeaf
 
 def height (s : PBTreeStack α) : ℕ := s.nilConsCases default (fun a _ _ => a.height)
 
@@ -843,6 +1626,7 @@ theorem ofTuple_twoPowTuple (bs : Fin (2^n) → α) :
 
 end PBTreeStack
 
+/-
 def reduceList : List (PBTree α) → List (PBTree α)
   | [] => []
   | t :: [] => t :: []
@@ -980,3 +1764,4 @@ theorem reduceList_reduceList :
       ·
 
 end ReduceList
+-/

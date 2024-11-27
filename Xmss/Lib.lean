@@ -98,6 +98,59 @@ end Fin
 
 namespace List
 
--- instance instDecidableEqNil : Decidable (l = []) := decidable_of_iff _ List.length_eq_zero
+@[simp]
+theorem take_ne_nil_iff {l : List α} {k : Nat} : l.take k ≠ [] ↔ k ≠ 0 ∧ l ≠ [] := by
+  cases l <;> cases k <;> simp [Nat.succ_ne_zero]
+
+@[simp]
+theorem drop_ne_nil_iff {l : List α} {k : Nat} : l.drop k ≠ [] ↔ k < l.length := by
+  cases l <;> cases k <;> simp [Nat.succ_ne_zero]
+
+theorem length_take_succ_length_div_two {l : List α} :
+    (l.take ((l.length + 1) / 2)).length = (l.length + 1) / 2 := by
+  simp_rw [List.length_take, min_eq_left_iff, Nat.div_le_iff_le_mul_add_pred zero_lt_two,
+    two_mul, ← one_add_one_eq_two, Nat.add_sub_cancel, Nat.add_le_add_iff_right,
+    Nat.le_add_right]
+
+theorem length_drop_succ_length_div_two {l : List α} :
+    (l.drop ((l.length + 1) / 2)).length = l.length / 2 := by
+  simp_rw [List.length_drop]
+  refine Nat.sub_eq_of_eq_add ?_
+  by_cases hnp : Even (l.length)
+  · rw [Nat.add_div_of_dvd_right hnp.two_dvd, Nat.div_eq_of_lt one_lt_two,
+      add_zero, ← two_mul, Nat.two_mul_div_two_of_even hnp]
+  · rw [← Nat.add_div_of_dvd_left (Nat.even_add_one.mpr hnp).two_dvd, ← add_assoc,
+      ← two_mul, Nat.mul_add_div zero_lt_two, Nat.div_eq_of_lt one_lt_two, add_zero]
+
+theorem length_drop_le_length_take_iff_ge_succ_length_div_two {l : List α} :
+    (l.drop k).length ≤ (l.take k).length ↔ (l.length + 1) / 2 ≤ k := by
+  simp_rw [length_drop, length_take, le_min_iff, tsub_le_iff_right, le_add_iff_nonneg_right,
+    zero_le, and_true, ← two_mul, Nat.div_le_iff_le_mul_add_pred zero_lt_two,
+    ← one_add_one_eq_two, Nat.add_sub_cancel, Nat.add_le_add_iff_right]
+
+theorem length_take_lt_length_drop_iff_lt_succ_length_div_two {l : List α} :
+    (l.take k).length < (l.drop k).length ↔ k < (l.length + 1) / 2 := by
+  simp_rw [lt_iff_not_le, length_drop_le_length_take_iff_ge_succ_length_div_two]
+
 
 end List
+
+namespace Nat
+
+@[simp] theorem log2_one : Nat.log2 1 = 0 := Nat.log2_two_pow (n := 0)
+
+theorem size_eq_log2_succ {n : ℕ} (hn : n ≠ 0) : n.size = n.log2 + 1 := by
+  refine le_antisymm ?_ ?_
+  · rw [Nat.size_le]
+    exact Nat.lt_log2_self
+  · rw [Nat.succ_le_iff, Nat.log2_lt hn]
+    exact Nat.lt_size_self _
+
+theorem log2_eq_size_pred {n : ℕ} (hn : n ≠ 0) : n.log2 = n.size - 1 := by
+  rw [size_eq_log2_succ hn, Nat.add_sub_cancel]
+
+theorem log2_bit (h : n ≠ 0) : (Nat.bit b n).log2 = n.log2.succ := by
+  simp_rw [log2_eq_size_pred (Nat.bit_ne_zero _ h),
+    size_bit (Nat.bit_ne_zero _ h), Nat.succ_sub_one, size_eq_log2_succ h]
+
+end Nat

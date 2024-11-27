@@ -33,7 +33,6 @@ theorem Nat.log_eq_iff {b : ℕ} {m : ℕ} {n : ℕ} (h : m ≠ 0 ∨ 1 < b ∧ 
 Nat.log b n = m ↔ b ^ m ≤ n ∧ n < b ^ (m + 1)
 -/
 
-@[simp] theorem Nat.log2_one : Nat.log2 1 = 0 := Nat.log2_two_pow (n := 0)
 
 theorem Nat.log2_eq_iff_of_ne_zero (hn : n ≠ 0) : Nat.log2 n = m ↔ 2^m ≤ n ∧ n < 2^(m + 1) := by
   rw [Nat.log2_eq_log_two, Nat.log_eq_iff (Or.inr ⟨one_lt_two, hn⟩)]

@@ -98,13 +98,6 @@ end Fin
 
 namespace List
 
-@[simp]
-theorem take_ne_nil_iff {l : List α} {k : Nat} : l.take k ≠ [] ↔ k ≠ 0 ∧ l ≠ [] := by
-  cases l <;> cases k <;> simp [Nat.succ_ne_zero]
-
-@[simp]
-theorem drop_ne_nil_iff {l : List α} {k : Nat} : l.drop k ≠ [] ↔ k < l.length := by
-  cases l <;> cases k <;> simp [Nat.succ_ne_zero]
 
 theorem length_take_succ_length_div_two {l : List α} :
     (l.take ((l.length + 1) / 2)).length = (l.length + 1) / 2 := by
@@ -122,35 +115,104 @@ theorem length_drop_succ_length_div_two {l : List α} :
   · rw [← Nat.add_div_of_dvd_left (Nat.even_add_one.mpr hnp).two_dvd, ← add_assoc,
       ← two_mul, Nat.mul_add_div zero_lt_two, Nat.div_eq_of_lt one_lt_two, add_zero]
 
-theorem length_drop_le_length_take_iff_ge_succ_length_div_two {l : List α} :
+theorem length_drop_le_length_take {l : List α} :
     (l.drop k).length ≤ (l.take k).length ↔ (l.length + 1) / 2 ≤ k := by
   simp_rw [length_drop, length_take, le_min_iff, tsub_le_iff_right, le_add_iff_nonneg_right,
     zero_le, and_true, ← two_mul, Nat.div_le_iff_le_mul_add_pred zero_lt_two,
     ← one_add_one_eq_two, Nat.add_sub_cancel, Nat.add_le_add_iff_right]
 
-theorem length_take_lt_length_drop_iff_lt_succ_length_div_two {l : List α} :
+theorem length_drop_succ_length_div_two_le_length_take_succ_length_div_two {l : List α} :
+    (l.drop ((l.length + 1) / 2)).length ≤ (l.take ((l.length + 1) / 2)).length :=
+  length_drop_le_length_take.mpr le_rfl
+
+@[simp]
+theorem length_take_pos {l : List α} {k : Nat} :
+    0 < (l.take k).length ↔ 0 < l.length ∧ 0 < k := by
+  cases l <;> cases k <;> simp [Nat.succ_ne_zero]
+
+@[simp]
+theorem length_drop_pos {l : List α} {k : Nat} : 0 < (l.drop k).length ↔ k < l.length := by
+  cases l <;> cases k <;> simp [Nat.succ_ne_zero]
+
+theorem length_drop_lt_length {l : List α} :
+    (List.drop k l).length < l.length ↔ 0 < l.length ∧ 0 < k := by
+  simp_rw [length_drop, tsub_lt_self_iff]
+
+theorem length_take_lt_length {l : List α} :
+    (List.take k l).length < l.length ↔ k < l.length := by
+  simp_rw [length_take, min_lt_iff, lt_self_iff_false, or_false]
+
+theorem length_take_lt_length_drop {l : List α} :
     (l.take k).length < (l.drop k).length ↔ k < (l.length + 1) / 2 := by
-  simp_rw [lt_iff_not_le, length_drop_le_length_take_iff_ge_succ_length_div_two]
+  simp_rw [lt_iff_not_le, length_drop_le_length_take]
 
 
 end List
 
 namespace Nat
 
-@[simp] theorem log2_one : Nat.log2 1 = 0 := Nat.log2_two_pow (n := 0)
+@[simp] theorem log2_one : log2 1 = 0 := log2_two_pow (n := 0)
 
 theorem size_eq_log2_succ {n : ℕ} (hn : n ≠ 0) : n.size = n.log2 + 1 := by
   refine le_antisymm ?_ ?_
-  · rw [Nat.size_le]
-    exact Nat.lt_log2_self
-  · rw [Nat.succ_le_iff, Nat.log2_lt hn]
-    exact Nat.lt_size_self _
+  · rw [size_le]
+    exact lt_log2_self
+  · rw [succ_le_iff, log2_lt hn]
+    exact lt_size_self _
 
 theorem log2_eq_size_pred {n : ℕ} (hn : n ≠ 0) : n.log2 = n.size - 1 := by
   rw [size_eq_log2_succ hn, Nat.add_sub_cancel]
 
-theorem log2_bit (h : n ≠ 0) : (Nat.bit b n).log2 = n.log2.succ := by
-  simp_rw [log2_eq_size_pred (Nat.bit_ne_zero _ h),
-    size_bit (Nat.bit_ne_zero _ h), Nat.succ_sub_one, size_eq_log2_succ h]
+theorem log2_bit (h : n ≠ 0) : (bit b n).log2 = n.log2.succ := by
+  simp_rw [log2_eq_size_pred (bit_ne_zero _ h),
+    size_bit (bit_ne_zero _ h), succ_sub_one, size_eq_log2_succ h]
+
+theorem log2_eq_iff_of_ne_zero (hn : n ≠ 0) : log2 n = m ↔ 2^m ≤ n ∧ n < 2^(m + 1) := by
+  rw [log2_eq_log_two, log_eq_iff (Or.inr ⟨one_lt_two, hn⟩)]
+
+theorem log2_eq_iff_of_ne_zero_right (hm : m ≠ 0) :
+    log2 n = m ↔ 2^m ≤ n ∧ n < 2^(m + 1) := by
+  rw [log2_eq_log_two, log_eq_iff (Or.inl hm)]
+
+theorem log2_eq_succ_iff :
+    log2 n = m + 1 ↔ 2^(m + 1) ≤ n ∧ n < 2^(m + 2) :=
+  log2_eq_iff_of_ne_zero_right (succ_ne_zero _)
+
+theorem log2_eq_zero_iff : log2 n = 0 ↔ n = 0 ∨ n = 1 := by
+  simp_rw [log2_eq_log_two, log_eq_zero_iff, one_lt_two.not_le, or_false,
+    Nat.lt_succ_iff, le_one_iff_eq_zero_or_eq_one]
+
+theorem log2_pred_two_pow {n : ℕ} : (2^n - 1).log2 = n - 1 := by
+  rcases n with (_ | (_ | n))
+  · simp_rw [pow_zero, Nat.sub_self, log2_zero]
+  · simp_rw [zero_add, pow_one, Nat.add_one_sub_one, log2_one]
+  · simp_rw [add_tsub_cancel_right, log2_eq_succ_iff]
+    refine ⟨le_sub_one_of_lt ?_, pred_lt_self (Nat.two_pow_pos _)⟩
+    simp_rw [pow_succ', mul_lt_mul_left zero_lt_two,
+      lt_mul_iff_one_lt_left (Nat.two_pow_pos _), one_lt_two]
+
+theorem size_two_mul [NeZero n] : (2*n).size = n.size + 1 := by
+  refine size_bit (b := false) ?_
+  simp_rw [bit_false, mul_ne_zero_iff]
+  exact ⟨NeZero.ne 2, NeZero.ne n⟩
+
+theorem size_two_mul_add_one : (2*n + 1).size = n.size + 1:= by
+  refine size_bit (b := true) ?_
+  simp_rw [bit_true, ne_eq, succ_ne_zero, not_false_eq_true]
+
+theorem size_div_two_succ [NeZero n] : (n / 2).size + 1 = n.size := by
+  rcases even_or_odd n with h | h
+  · have : NeZero (n / 2) := ⟨(Nat.div_ne_zero_iff zero_lt_two.ne').mpr <|
+      (NeZero.one_le).lt_of_ne (fun C => (not_even_one (C ▸ h)).elim)⟩
+    rw [← size_two_mul, two_mul_div_two_of_even h]
+  · rw [← size_two_mul_add_one, two_mul_div_two_add_one_of_odd h]
+
+theorem size_pred_pow {n : ℕ} : (2^n - 1).size = n := by
+  cases n
+  · simp_rw [pow_zero, Nat.sub_self, size_zero]
+  · exact le_antisymm (size_le.mpr <| Nat.pred_lt_self (Nat.two_pow_pos _))
+      (lt_size.mpr <| (Nat.le_pred_iff_lt (Nat.two_pow_pos _)).mpr
+      (Nat.pow_lt_pow_succ one_lt_two))
+
 
 end Nat

@@ -42,7 +42,8 @@ theorem Nat.log2_eq_iff_of_ne_zero_right (hm : m ≠ 0) :
   rw [Nat.log2_eq_log_two, Nat.log_eq_iff (Or.inl hm)]
 
 theorem Nat.log2_eq_succ_iff :
-    log2 n = m + 1 ↔ 2^(m + 1) ≤ n ∧ n < 2^(m + 2) := log2_eq_iff_of_ne_zero_right (succ_ne_zero _)
+    log2 n = m + 1 ↔ 2^(m + 1) ≤ n ∧ n < 2^(m + 2) :=
+  log2_eq_iff_of_ne_zero_right (succ_ne_zero _)
 
 theorem Nat.log2_eq_zero_iff : Nat.log2 n = 0 ↔ n = 0 ∨ n = 1 := by
   simp_rw [Nat.log2_eq_log_two, Nat.log_eq_zero_iff, one_lt_two.not_le, or_false,

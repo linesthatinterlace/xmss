@@ -258,7 +258,7 @@ theorem height_lt_count : t.height < t.count := by
 
 theorem succ_height_le_count : t.height + 1 ≤ t.count := height_lt_count
 
-instance : NeZero t.count := ⟨Nat.not_eq_zero_of_lt height_lt_count⟩
+instance : NeZero t.count := ⟨Nat.ne_zero_of_lt height_lt_count⟩
 
 theorem count_le_two_pow_height : t.count ≤ 2^t.height := by
   induction t with | leaf _ => _ | node _ _ IHL IHR => _
@@ -320,8 +320,8 @@ theorem ofList_eq_leaf_iff {hl : l ≠ []} : ofList l hl = leaf a ↔ l = [a] :=
     intro C
     rw [C] at hl'
     contradiction
-  · simp_rw [not_lt, Nat.le_one_iff_eq_zero_or_eq_one, List.length_eq_zero, hl, false_or,
-      List.length_eq_one] at hl'
+  · simp_rw [not_lt, Nat.le_one_iff_eq_zero_or_eq_one, List.length_eq_zero_iff, hl, false_or,
+      List.length_eq_one_iff] at hl'
     rcases hl' with ⟨_, rfl⟩
     simp_rw [ofList_singleton, leaf_inj_iff, List.cons.injEq, and_true]
 
@@ -346,8 +346,8 @@ theorem ofList_eq_leaf_iff {hl : l ≠ []} : ofList l hl = leaf a ↔ l = [a] :=
     rcases Nat.exists_eq_add_of_le' hn with ⟨n, hn⟩
     simp_rw [hn, add_right_comm, Nat.succ_eq_add_one, ← Nat.add_assoc n 1 1, one_add_one_eq_two,
       Nat.add_div_right _ zero_lt_two, Nat.add_sub_cancel, Nat.size_div_two_succ]
-  · simp_rw [not_lt, Nat.le_one_iff_eq_zero_or_eq_one, List.length_eq_zero, hl, false_or,
-      List.length_eq_one] at hn
+  · simp_rw [not_lt, Nat.le_one_iff_eq_zero_or_eq_one, List.length_eq_zero_iff, hl, false_or,
+      List.length_eq_one_iff] at hn
     rcases hn with ⟨_, rfl⟩
     simp_rw [List.length_singleton, Nat.sub_self, Nat.size_zero, ofList_singleton, height_leaf]
 
@@ -372,8 +372,8 @@ theorem height_ofList_of_length_eq_one (hl : l.length = 1)
     have drop_lt := List.length_drop_lt_length.mpr ⟨hn₂.trans hn₁, hn₂⟩
     rw [ofList_of_one_lt_length hn, count_node, IH (hl := hl_drop) drop_lt,
       IH (hl := hl_take) take_lt, ← List.length_append, List.take_append_drop]
-  · simp_rw [not_lt, Nat.le_one_iff_eq_zero_or_eq_one, List.length_eq_zero, hl, false_or,
-      List.length_eq_one] at hn
+  · simp_rw [not_lt, Nat.le_one_iff_eq_zero_or_eq_one, List.length_eq_zero_iff, hl, false_or,
+      List.length_eq_one_iff] at hn
     rcases hn with ⟨_, rfl⟩
     simp_rw [ofList_singleton, count_leaf, List.length_singleton]
 
@@ -399,7 +399,7 @@ theorem ofList_append_of_length_eq {s t : List α} (hst : s.length = t.length) (
 theorem IsPerfect_ofList_of_length_eq_two_pow (hk : l.length = 2^k) :
     (ofList l (List.ne_nil_of_length_pos (hk ▸ Nat.two_pow_pos _))).IsPerfect := by
   induction k generalizing l with | zero => _ | succ k IH => _
-  · simp_rw [pow_zero, List.length_eq_one] at hk
+  · simp_rw [pow_zero, List.length_eq_one_iff] at hk
     rcases hk with ⟨_, rfl⟩
     simp_rw [ofList_singleton, IsPerfect_leaf]
   · have hl' : 1 < l.length := hk ▸ ((Nat.one_lt_pow_iff (Nat.succ_ne_zero _)).mpr one_lt_two)
@@ -470,8 +470,8 @@ theorem toList_addToHeight : (t.addToHeight n).toList = (fun l => l ++ l)^[n] t.
     have drop_lt := List.length_drop_lt_length.mpr ⟨hn₂.trans hn₁, hn₂⟩
     rw [ofList_of_one_lt_length hn, toList_node, IH (hl := hl_drop) drop_lt,
       IH (hl := hl_take) take_lt, List.take_append_drop]
-  · simp_rw [not_lt, Nat.le_one_iff_eq_zero_or_eq_one, List.length_eq_zero, hl, false_or,
-      List.length_eq_one] at hn
+  · simp_rw [not_lt, Nat.le_one_iff_eq_zero_or_eq_one, List.length_eq_zero_iff, hl, false_or,
+      List.length_eq_one_iff] at hn
     rcases hn with ⟨_, rfl⟩
     simp_rw [ofList_singleton, toList_leaf]
 
@@ -803,747 +803,535 @@ end Monad
 
 end BTree
 
-def BTreeStack (α : Type u) := List (BTree α) --{l :  // l.Sorted (· < ·)}
+abbrev BTStack (α : Type u) := List (BTree α)
+namespace BTStack
 
-namespace BTreeStack
+variable {s t : BTStack α} {a b l r : BTree α} {v : α}
 
 open BTree
 
-variable {l r a : BTree α} {s t : BTreeStack α}
 
-instance [Repr α] : Repr (BTreeStack α) := instReprList
-instance [DecidableEq α] : DecidableEq (BTreeStack α) := instDecidableEqList
-
-def ofList (l : List (BTree α)) : BTreeStack α := l
-
-section OfList
-
-variable {s t : List (BTree α)}
-
-theorem ofList_injective : Function.Injective (ofList (α := α)) := fun _ _ => id
-
-@[simp] theorem ofList_inj_iff : ofList s = ofList t ↔ s = t := Iff.rfl
-
-instance : Inhabited (BTreeStack α) := ⟨ofList []⟩
-
-end OfList
-
-def toList (l : BTreeStack α) : List (BTree α) := l
-
-section ToList
-
-
-@[simp] theorem toList_ofList : toList (ofList ts) = ts := rfl
-
-@[simp] theorem ofList_toList : ofList (toList ts) = ts := rfl
-
-theorem toList_injective : Function.Injective (toList (α := α)) := fun _ _ => id
-
-@[simp] theorem toList_inj_iff : s.toList = t.toList ↔ s = t := Iff.rfl
-
-end ToList
-
-instance : Membership (BTree α) (BTreeStack α) where
-  mem l a := a ∈ l.toList
-
-section Mem
-
-@[simp] theorem mem_toList_iff : a ∈ s.toList ↔ a ∈ s := Iff.rfl
-
-@[simp] theorem mem_ofList_iff {s : List (BTree α)} : a ∈ ofList s ↔ a ∈ s := Iff.rfl
-
-end Mem
-
-def nil : BTreeStack α := ofList []
-
-section Nil
-
-@[simp] theorem toList_nil : (nil : BTreeStack α).toList = [] := rfl
-
-@[simp] theorem ofList_nil : ofList ([] : List (BTree α)) = nil := rfl
-
-@[simp] theorem toList_eq_nil_iff : s.toList = [] ↔ s = nil := Iff.rfl
-
-@[simp] theorem ofList_eq_nil_iff {s : List (BTree α)} : ofList s = nil ↔ s = [] := Iff.rfl
-
-theorem toList_ne_nil_iff : s.toList ≠ [] ↔ s ≠ nil := toList_eq_nil_iff.not
-
-theorem ofList_ne_nil_iff {s : List (BTree α)} : ofList s ≠ nil ↔ s ≠ [] := Iff.rfl
-
-@[simp] theorem not_mem_nil {t : BTree α} : ¬ t ∈ nil := List.not_mem_nil _
-
-theorem ne_nil_of_mem : a ∈ t → t ≠ nil := List.ne_nil_of_mem
-
-end Nil
-
-def cons (a : BTree α) (s : BTreeStack α) : BTreeStack α := ofList (a :: s.toList)
-
-section Cons
-
-@[simp] theorem cons_inj_iff : cons a s = cons a' s' ↔ ((a = a') ∧ s = s') := List.cons_eq_cons
-
-@[simp] theorem toList_cons : (cons a s).toList = a :: s.toList := rfl
-
-@[simp] theorem ofList_cons {s : List (BTree α)} : ofList (a :: s) = cons a (ofList s) := rfl
-
-@[simp] theorem mem_cons : b ∈ cons a s ↔ b = a ∨ b ∈ s := List.mem_cons
-
-theorem mem_cons_self : a ∈ cons a s := List.mem_cons_self _ _
-
-theorem mem_cons_of_mem (h : b ∈ s) : b ∈ cons a s := List.mem_cons_of_mem _ h
-
-end Cons
-
-
-section NilCons
-
-@[simp] theorem mem_cons_nil : a ∈ cons b nil ↔ a = b := List.mem_singleton
-
-@[simp] theorem nil_ne_cons : nil ≠ cons a s := List.noConfusion
-
-@[simp] theorem cons_ne_nil : cons a s ≠ nil := List.noConfusion
-
-@[elab_as_elim, induction_eliminator] def nilConsInduction {motive : BTreeStack α → Sort _}
-    (nil : motive nil) (cons : (a : BTree α) → (s : BTreeStack α) → motive s → motive (cons a s))
-    (t : BTreeStack α) : motive t := t.recOn nil cons
-
-@[simp] theorem nilConsInduction_nil {motive : BTreeStack α → Sort _}
-    {nil : motive nil} {cons : (a : BTree α) → (s : BTreeStack α) → motive s → motive (cons a s)} :
-    nilConsInduction nil cons BTreeStack.nil = nil := by
-  unfold nilConsInduction
-  rfl
-
-@[simp] theorem nilConsInduction_cons {motive : BTreeStack α → Sort _}
-    {nil : motive nil} {cons : (a : BTree α) → (s : BTreeStack α) → motive s → motive (cons a s)} :
-    nilConsInduction nil cons (BTreeStack.cons a s) =
-    cons a s (nilConsInduction nil cons s) := by
-  conv =>
-    lhs
-    unfold BTree.node nilConsInduction
-  rfl
-
-@[elab_as_elim, cases_eliminator] def nilConsCases {motive : BTreeStack α → Sort _}
-    (nil : motive nil) (cons : (a : BTree α) → (s : BTreeStack α) → motive (cons a s))
-    (t : BTreeStack α) : motive t := nilConsInduction nil (fun a s _ => cons a s) t
-
-@[simp] theorem nilConsCases_nil {motive : BTreeStack α → Sort _}
-    {nil : motive nil} {cons : (a : BTree α) → (s : BTreeStack α) → motive (cons a s)} :
-      nilConsCases nil cons BTreeStack.nil = nil := nilConsInduction_nil
-
-@[simp] theorem nilConsCases_cons {motive : BTreeStack α → Sort _}
-    {nil : motive nil} {cons : (a : BTree α) → (s : BTreeStack α) → motive (cons a s)} :
-      nilConsCases nil cons (BTreeStack.cons a s) = cons a s := nilConsInduction_cons
-
-theorem nil_or_exists_cons (t : BTreeStack α) :
-    t = nil ∨ (∃ a s, t = cons a s) := by
-  cases t using nilConsCases
-  · exact Or.inl rfl
-  · exact Or.inr ⟨_, _, rfl⟩
-
-theorem exists_cons_of_ne_nil  (ht : t ≠ nil) : ∃ a s, t = cons a s := by
-  cases t using nilConsCases
-  · exact (ht rfl).elim
-  · exact ⟨_, _, rfl⟩
-
-end NilCons
-
-
-def singleton (a : BTree α) : BTreeStack α := cons a nil
-
-section Singleton
-
-@[simp] theorem cons_nil : cons a nil = singleton a := rfl
-
-@[simp] theorem ofList_singleton : ofList [a] = singleton a := rfl
-
-@[simp] theorem toList_singleton : (singleton a).toList = [a] := rfl
-
-@[simp] theorem cons_eq_singleton_iff : cons a s = singleton b ↔ a = b ∧ s = nil := cons_inj_iff
-
-@[simp] theorem singleton_eq_cons_iff : singleton b = cons a s ↔ b = a ∧ s = nil := by
-  rw [eq_comm, cons_eq_singleton_iff, eq_comm]
-
-@[simp] theorem singleton_inj_iff : singleton a = singleton b ↔ a = b :=
-  ⟨fun h => (cons_inj_iff.mp h).1, fun h => h ▸ rfl⟩
-
-@[simp] theorem singleton_ne_nil : singleton a ≠ nil := cons_ne_nil
-
-@[simp] theorem nil_ne_singleton : nil ≠ singleton a := singleton_ne_nil.symm
-
-theorem eq_of_mem_singleton : b ∈ singleton a → b = a := List.eq_of_mem_singleton
-
-@[simp] theorem mem_singleton : b ∈ singleton a ↔ b = a := List.mem_singleton
-
-theorem mem_singleton_self (a : BTree α) : a ∈ singleton a := List.mem_singleton_self a
-
-end Singleton
-
-
-def snoc (s : BTreeStack α) (a : BTree α) : BTreeStack α := ofList (s.toList ++ [a])
-
-section Snoc
-
-@[simp] theorem snoc_inj_iff : snoc s a = snoc s' a' ↔ ((s = s') ∧ a = a') := by
-  refine ⟨fun h => ?_, fun h => h.1 ▸ h.2 ▸ rfl⟩
-  have H := List.append_inj' h rfl
-  simp_rw [toList_inj_iff, List.cons.injEq, and_true] at H
-  exact H
-
-@[simp] theorem toList_snoc : (snoc s a).toList = s.toList ++ [a] := rfl
-
-@[simp] theorem ofList_snoc {s : List (BTree α)} : ofList (s ++ [a]) = snoc (ofList s) a := rfl
-
-@[simp] theorem mem_snoc : b ∈ snoc s a ↔ b ∈ s ∨ b = a := by
-  refine List.mem_append.trans ?_
-  simp_rw [mem_toList_iff, List.mem_singleton]
-
-theorem mem_snoc_self : a ∈ snoc s a := List.mem_append_right _ (List.mem_singleton_self _)
-
-theorem mem_snoc_of_mem (h : b ∈ s) : b ∈ snoc s a := List.mem_append_left _ h
-
-theorem cons_snoc_eq_snoc_cons : cons a (snoc s b) = snoc (cons a s) b := List.cons_append _ _ _
-
-theorem snoc_cons_eq_cons_snoc : snoc (cons a s) b = cons a (snoc s b) :=
-  cons_snoc_eq_snoc_cons.symm
-
-theorem cons_singleton_eq_snoc_singleton : cons a (singleton b) = snoc (singleton a) b := rfl
-
-theorem snoc_singleton_eq_cons_singleton : snoc (singleton a) b = cons a (singleton b) := rfl
-
-theorem cons_nil_eq_snoc_nil : cons a nil = snoc nil a := rfl
-
-theorem snoc_nil_eq_cons_nil : snoc nil a = cons a nil := rfl
-
-end Snoc
-
-section NilSnoc
-
-@[simp] theorem snoc_nil : snoc nil a = singleton a := rfl
-
-@[simp] theorem mem_snoc_nil : a ∈ snoc nil b ↔ a = b := List.mem_singleton
-
-@[simp] theorem nil_ne_snoc : nil ≠ snoc s a := by cases s <;> exact List.noConfusion
-
-@[simp] theorem snoc_ne_nil : snoc s a ≠ nil := nil_ne_snoc.symm
-
-@[elab_as_elim] def nilSnocInduction {motive : BTreeStack α → Sort _}
-    (nil : motive nil) (snoc : (s : BTreeStack α) → (a : BTree α) → motive s → motive (snoc s a))
-    (t : BTreeStack α) : motive t := t.reverseRecOn nil snoc
-
-@[simp] theorem nilSnocInduction_nil {motive : BTreeStack α → Sort _}
-    {nil : motive nil} {snoc : (s : BTreeStack α) → (a : BTree α) → motive s → motive (snoc s a)} :
-    nilSnocInduction nil snoc BTreeStack.nil = nil := List.reverseRecOn_nil _ _
-
-@[simp] theorem nilSnocInduction_snoc {motive : BTreeStack α → Sort _}
-    {nil : motive nil} {snoc : (s : BTreeStack α) → (a : BTree α) → motive s → motive (snoc s a)} :
-    nilSnocInduction nil snoc (BTreeStack.snoc s a) =
-    snoc s a (nilSnocInduction nil snoc s) := List.reverseRecOn_concat _ _ _ _
-
-@[elab_as_elim] def nilSnocCases {motive : BTreeStack α → Sort _}
-    (nil : motive nil) (snoc : (s : BTreeStack α) → (a : BTree α) → motive (snoc s a))
-    (t : BTreeStack α) : motive t := nilSnocInduction nil (fun s a _ => snoc s a) t
-
-@[simp] theorem nilSnocCases_nil {motive : BTreeStack α → Sort _}
-    {nil : motive nil} {snoc : (s : BTreeStack α) → (a : BTree α) → motive (snoc s a)} :
-      nilSnocCases nil snoc BTreeStack.nil = nil := nilSnocInduction_nil
-
-@[simp] theorem nilSnocCases_snoc {motive : BTreeStack α → Sort _}
-    {nil : motive nil} {snoc : (s : BTreeStack α) → (a : BTree α) → motive (snoc s a)} :
-      nilSnocCases nil snoc (BTreeStack.snoc s a) = snoc s a := nilSnocInduction_snoc
-
-theorem nil_or_exists_snoc (t : BTreeStack α) :
-    t = nil ∨ (∃ a s, t = snoc s a) := by
-  cases t using nilSnocCases
-  · exact Or.inl rfl
-  · exact Or.inr ⟨_, _, rfl⟩
-
-theorem exists_snoc_of_ne_nil (ht : t ≠ nil) : ∃ s a, t = snoc a s := by
-  cases t using nilSnocCases
-  · exact (ht rfl).elim
-  · exact ⟨_, _, rfl⟩
-
-end NilSnoc
-
-
-def getFirst (s : BTreeStack α) : s ≠ nil → BTree α :=
-    s.nilConsCases (fun h => h.irrefl.elim) (fun a _ _ => a)
-
-section GetFirst
-
-@[simp] theorem getFirst_cons :
-    (cons a s).getFirst cons_ne_nil = a := congrFun nilConsCases_cons cons_ne_nil
-
-@[simp] theorem getFirst_singleton :
-    (singleton a).getFirst singleton_ne_nil = a := by
-  simp_rw [← cons_nil, getFirst_cons]
-
-@[simp] theorem getFirst_ofList {s : List (BTree α)} {hs : ofList s ≠ nil}
-    (hs' := (ofList_ne_nil_iff).mp hs) : (ofList s).getFirst hs = s.head hs' := by
+def count : BTStack α → ℕ
+  | [] => 0
+  | (a :: s) => a.count + count s
+
+@[simp] theorem count_nil : count ([] : BTStack α) = 0 := rfl
+@[simp] theorem count_cons : count (a :: s) = a.count + count s := rfl
+
+theorem count_singleton : count [a] = a.count := rfl
+
+theorem count_append_singleton : count (s ++ [a]) = s.count + a.count := by
+  induction s with | nil => _ | cons b t IH => _
+  · simp_rw [List.nil_append, count_nil, count_singleton, zero_add]
+  · simp_rw [List.cons_append, count_cons, IH, add_assoc]
+
+theorem count_append : count (s ++ t) = s.count + t.count := by
+  induction t generalizing s with | nil => _ | cons a t IH => _
+  · simp_rw [List.append_nil, count_nil, add_zero]
+  · rw [List.append_cons, IH, count_append_singleton, count_cons, add_assoc]
+
+
+def mulTwo : BTStack α → BTStack α
+  | [] => []
+  | leaf v :: s => leaf v :: mulTwo s
+  | node l r :: s => l :: r :: mulTwo s
+
+@[simp] theorem mulTwo_nil : mulTwo ([] : BTStack α) = [] := rfl
+@[simp] theorem mulTwo_leaf_cons : mulTwo (leaf v :: s) = leaf v :: mulTwo s := rfl
+@[simp] theorem mulTwo_node_cons : mulTwo (node l r :: s) = l :: r :: mulTwo s := rfl
+
+theorem length_le_length_mulTwo : s.length ≤ (mulTwo s).length := by
+  induction s with | nil => _ | cons a s IH => _
+  · simp_rw [mulTwo_nil, le_rfl]
+  · cases a
+    · simp_rw [mulTwo_leaf_cons, List.length_cons, add_le_add_iff_right]
+      exact IH
+    · simp_rw [mulTwo_node_cons, List.length_cons, add_le_add_iff_right]
+      exact IH.trans (Nat.lt_succ_self _).le
+
+theorem length_mulTwo_le_two_mul_length : (mulTwo s).length ≤ 2 * s.length := by
+  induction s with | nil => _ | cons a s IH => _
+  · simp_rw [mulTwo_nil, List.length_nil, mul_zero, le_refl]
+  · cases a
+    · simp_rw [mulTwo_leaf_cons, List.length_cons, Nat.mul_succ, add_le_add_iff_right]
+      exact IH.trans (Nat.lt_succ_self _).le
+    · simp_rw [mulTwo_node_cons, List.length_cons, Nat.mul_succ, add_le_add_iff_right]
+      exact IH
+
+theorem count_mulTwo : count (mulTwo s) = count s := by
+  induction s with | nil => _ | cons a s IH => _
+  · simp_rw [mulTwo_nil]
+  · cases a
+    · simp_rw [mulTwo_leaf_cons, count_cons, count_leaf, add_right_inj]
+      exact IH
+    · simp_rw [mulTwo_node_cons, count_cons, count_node, IH, add_assoc]
+
+def divModTwo : BTStack α → Option (BTree α) × BTStack α
+  | [] => (none, [])
+  | [a] => (some a, [])
+  | l :: r :: s =>
+    let (mts, dts) := divModTwo s
+    (mts, node l r :: dts)
+
+def modTwo (s :  BTStack α) : Option (BTree α) := (divModTwo s).1
+def divTwo (s :  BTStack α) : BTStack α := (divModTwo s).2
+
+@[simp] theorem divModTwo_eq_divTwo_modTwo : divModTwo s = (modTwo s, divTwo s) := rfl
+
+@[simp] theorem modTwo_nil : modTwo ([] : BTStack α) = none := rfl
+@[simp] theorem modTwo_singleton : modTwo [a] = a := rfl
+@[simp] theorem modTwo_cons_cons : modTwo (l :: r :: s) = modTwo s := rfl
+
+theorem modTwo_eq_none_iff : modTwo s = none ↔ s.length % 2 = 0 := by
+  generalize hs : s.length = n
+  revert s
+  induction n using Nat.strongRecOn with | ind n IH => _
+  intro s hs
+  subst hs
   cases s with | nil => _ | cons a s => _
-  · exact hs'.irrefl.elim
-  · simp_rw [ofList_cons, getFirst_cons, List.head_cons]
+  · simp_rw [modTwo_nil, List.length_nil]
+  · cases s with | nil => _ | cons a s => _
+    · simp_rw [modTwo_singleton, Option.some_ne_none,
+        List.length_singleton, Nat.one_mod, one_ne_zero]
+    · simp_rw [modTwo_cons_cons, List.length_cons,
+        IH s.length ((Nat.lt_succ_self _).trans (Nat.lt_succ_self _)) rfl, add_assoc,
+        one_add_one_eq_two, Nat.add_mod_right]
 
-@[simp] theorem head_toList (h : s ≠ nil) (h' := toList_ne_nil_iff.mpr h) :
-    s.toList.head h' = s.getFirst h := by
-  cases s using nilConsCases
-  · exact h.irrefl.elim
-  · simp_rw [toList_cons, List.head_cons, getFirst_cons]
+theorem modTwo_eq_some_iff : modTwo s = some a ↔ s.length % 2 = 1 ∧ s.getLast? = some a := by
+  generalize hs : s.length = n
+  revert s
+  induction n using Nat.strongRecOn with | ind n IH => _
+  intro s hs
+  subst hs
+  cases s with | nil => _ | cons a s => _
+  · simp_rw [modTwo_nil, List.length_nil,
+      Nat.zero_mod, zero_ne_one, List.getLast?_nil, false_and, (Option.some_ne_none _).symm]
+  · cases s with | nil => _ | cons a s => _
+    · simp_rw [modTwo_singleton, List.length_singleton, true_and, List.getLast?_singleton]
+    · simp_rw [modTwo_cons_cons, List.length_cons, add_assoc, one_add_one_eq_two,
+        Nat.add_mod_right]
+      cases s with | nil => _ | cons a s => _
+      · simp_rw [modTwo_nil, List.length_nil, Nat.zero_mod, zero_ne_one,
+          false_and, (Option.some_ne_none _).symm]
+      · simp_rw [IH ((a :: s).length) ((Nat.lt_succ_self _).trans (Nat.lt_succ_self _)) rfl,
+          List.getLast?_cons_cons]
 
-theorem getFirst_mem : s.getFirst hs ∈ s := by
-  cases s using nilConsCases
-  · exact hs.irrefl.elim
-  · simp_rw [getFirst_cons]
-    exact mem_cons_self
+theorem modTwo_append_singleton_of_mod_two_length_eq_one (hs : s.length % 2 = 1) :
+    modTwo (s ++ [a]) = none := by
+  simp_rw [modTwo_eq_none_iff, List.length_append, List.length_singleton,
+    Nat.succ_mod_two_eq_zero_iff, hs]
 
-end GetFirst
+theorem modTwo_append_singleton_of_mod_two_length_eq_zero (hs : s.length % 2 = 0) :
+    modTwo (s ++ [a]) = some a := by
+  simp_rw [modTwo_eq_some_iff, List.length_append, List.length_singleton,
+    Nat.succ_mod_two_eq_one_iff, hs, List.getLast?_append, List.getLast?_singleton,
+    Option.some_or, and_self]
 
-def dropFirst (s : BTreeStack α) : BTreeStack α := s.nilConsCases nil (fun _ s => s)
+theorem modTwo_eq : modTwo s = if s.length % 2 = 1 then s.getLast? else none := by
+  rcases hs : modTwo s with (_ | a)
+  · rw [modTwo_eq_none_iff] at hs
+    simp_rw [hs, zero_ne_one, if_false]
+  · rw [modTwo_eq_some_iff] at hs
+    simp_rw [hs.1, if_true, hs.2]
 
-section DropFirst
+@[simp] theorem divTwo_nil : divTwo ([] : BTStack α) = [] := rfl
+@[simp] theorem divTwo_singleton : divTwo [a] = [] := rfl
+@[simp] theorem divTwo_cons_cons : divTwo (l :: r :: s) = node l r :: divTwo s := rfl
 
-@[simp] theorem dropFirst_nil : (nil : BTreeStack α).dropFirst = nil := nilConsCases_nil
+theorem divTwo_append_singleton_of_modTwo_eq_none (hs : modTwo s = none) :
+    divTwo (s ++ [b]) = divTwo s := by
+  generalize hs' : s.length = n
+  revert s
+  induction n using Nat.strongRecOn with | ind n IH => _
+  intro s hs hs'
+  subst hs'
+  cases s with | nil => _ | cons a s => _
+  · simp_rw [List.nil_append, divTwo_singleton, divTwo_nil]
+  · cases s with | nil => _ | cons a s => _
+    · contradiction
+    · simp_rw [modTwo_cons_cons] at hs
+      simp_rw [List.cons_append, divTwo_cons_cons, List.cons_eq_cons, true_and,
+        IH s.length ((Nat.lt_succ_self _).trans (Nat.lt_succ_self _)) hs rfl]
 
-@[simp] theorem dropFirst_cons : (cons a s).dropFirst = s := nilConsCases_cons
+theorem divTwo_append_singleton_of_modTwo_eq_some (hs : modTwo s = some a) :
+    divTwo (s ++ [b]) = divTwo s ++ [node a b] := by
+  generalize hs' : s.length = n
+  revert s
+  induction n using Nat.strongRecOn with | ind n IH => _
+  intro s hs hs'
+  subst hs'
+  cases s with | nil => _ | cons a s => _
+  · contradiction
+  · cases s with | nil => _ | cons a s => _
+    · simp_rw [modTwo_singleton, Option.some_inj] at hs
+      simp_rw [List.cons_append, divTwo_singleton, List.nil_append,
+        divTwo_cons_cons, divTwo_nil, hs]
+    · simp_rw [modTwo_cons_cons] at hs
+      simp_rw [List.cons_append, divTwo_cons_cons, List.cons_append, List.cons_eq_cons, true_and,
+        IH s.length ((Nat.lt_succ_self _).trans (Nat.lt_succ_self _)) hs rfl]
 
-@[simp] theorem dropFirst_singleton : (singleton a).dropFirst = nil := cons_nil ▸ dropFirst_cons
+theorem length_divTwo : (divTwo s).length = s.length / 2 := by
+  generalize hs : s.length = n
+  revert s
+  induction n using Nat.strongRecOn with | ind n IH => _
+  intro s hs
+  subst hs
+  cases s with | nil => _ | cons a s => _
+  · simp_rw [divTwo_nil, List.length_nil]
+  · cases s with | nil => _ | cons a s => _
+    · simp_rw [divTwo_singleton, List.length_cons, List.length_nil]
+    · simp_rw [divTwo_cons_cons, List.length_cons,
+        IH s.length ((Nat.lt_succ_self _).trans (Nat.lt_succ_self _)) rfl, add_assoc,
+        one_add_one_eq_two, Nat.add_div_right _ zero_lt_two]
 
-@[simp] theorem dropFirst_ofList {s : List (BTree α)} :
-    (ofList s).dropFirst = ofList s.tail := by
+theorem length_divTwo_lt_length_of_ne_nil (hs : s ≠ []) :
+    (divTwo s).length < s.length := by
+  rw [length_divTwo]
+  exact Nat.div_lt_self (List.length_pos_of_ne_nil hs) one_lt_two
+
+theorem length_divTwo_le_length :
+    (divTwo s).length ≤ s.length := by
+  rw [length_divTwo]
+  exact Nat.div_le_self _ _
+
+theorem count_divTwo_le_count : count (divTwo s) ≤ count s := by
+  generalize hs : s.length = n
+  revert s
+  induction n using Nat.strongRecOn with | ind n IH => _
+  intro s hs
+  subst hs
+  cases s with | nil => _ | cons a s => _
+  · simp_rw [divTwo_nil, le_rfl]
+  · cases s with | nil => _ | cons a s => _
+    · simp_rw [divTwo_singleton, count_singleton, count_nil, zero_le]
+    · simp_rw [divTwo_cons_cons, count_cons, count_node, add_assoc, add_le_add_iff_left]
+      exact IH _ ((Nat.lt_succ_self _).trans (Nat.lt_succ_self _)) rfl
+
+def squashStack (s : BTStack α) : BTStack α :=
+  if 0 < s.length then match modTwo s with
+    | none => squashStack (divTwo s)
+    | some a => a :: squashStack (divTwo s)
+  else []
+  termination_by s.length
+  decreasing_by exact length_divTwo_lt_length_of_ne_nil (List.ne_nil_of_length_pos (by assumption))
+
+@[simp]
+theorem squashStack_nil : squashStack ([] : BTStack α) = [] := by
+  unfold squashStack
+  exact if_neg (List.ne_nil_of_length_pos.mt (fun h => h rfl))
+
+theorem squashStack_of_modTwo_some (s : BTStack α) (a : BTree α) (hs : modTwo s = some a) :
+    squashStack s = a :: (divTwo s).squashStack := by
   cases s
-  · simp_rw [List.tail_nil, ofList_nil, dropFirst_nil]
-  · simp_rw [List.tail_cons, ofList_cons, dropFirst_cons]
+  · contradiction
+  · rw [squashStack.eq_def, List.length_cons, if_pos (Nat.zero_lt_succ _), hs]
 
-@[simp] theorem tail_toList :
-    s.toList.tail = s.dropFirst.toList := by
+theorem squashStack_of_modTwo_none (s : BTStack α) (hs : modTwo s = none) :
+    squashStack s = (divTwo s).squashStack := by
   cases s
-  · simp_rw [dropFirst_nil, toList_nil, List.tail_nil]
-  · simp only [dropFirst_cons, toList_cons, List.tail_cons]
+  · simp_rw [divTwo_nil]
+  · rw [squashStack.eq_def, List.length_cons, if_pos (Nat.zero_lt_succ _), hs]
 
-theorem eq_cons_of_getFirst_eq_dropFirst_eq (hsa : s.getFirst hs = a) (hss' : s.dropFirst = s') :
-    s = cons a s' := by
-  cases s
-  · exact hs.irrefl.elim
-  · simp_rw [getFirst_cons] at hsa
-    simp_rw [dropFirst_cons] at hss'
-    simp_rw [cons_inj_iff]
-    exact ⟨by assumption, by assumption⟩
+@[simp]
+theorem squashStack_singleton : squashStack [a] = [a] := by
+  rw [squashStack_of_modTwo_some [a] a modTwo_singleton, divTwo_singleton, squashStack_nil]
 
-theorem eq_cons_iff (hs : s ≠ nil) : s = cons a s' ↔ s.getFirst hs = a ∧ s.dropFirst = s' :=
-  ⟨fun h => by simp_rw [h] ; exact ⟨getFirst_cons, dropFirst_cons⟩,
-  fun h => eq_cons_of_getFirst_eq_dropFirst_eq h.1 h.2⟩
+theorem squashStack_append_singleton_of_modTwo_none (hs : modTwo s = none) :
+    squashStack (s ++ [a]) = a :: squashStack s := by
+  rw [squashStack_of_modTwo_some (s ++ [a]) a
+    (modTwo_append_singleton_of_mod_two_length_eq_zero (modTwo_eq_none_iff.mp hs)),
+    divTwo_append_singleton_of_modTwo_eq_none hs, squashStack_of_modTwo_none s hs]
 
-end DropFirst
+theorem squashStack_append_singleton_of_modTwo_some (hs : modTwo s = some a) :
+    squashStack (s ++ [b]) = squashStack (s.divTwo ++ [node a b]) := by
+  rw [squashStack_of_modTwo_none (s ++ [b]) (modTwo_append_singleton_of_mod_two_length_eq_one
+    (modTwo_eq_some_iff.mp hs).1), divTwo_append_singleton_of_modTwo_eq_some hs]
 
-def getLast (s : BTreeStack α) : s ≠ nil → BTree α :=
-    s.nilSnocCases (fun h => h.irrefl.elim) (fun _ a _ => a)
+theorem count_squashStack (s : BTStack α) : s.squashStack.count = s.count := by
+  induction s using List.reverseRecOn with | nil => _ | append_singleton s a IH => _
+  · simp_rw [squashStack_nil]
+  · simp_rw [count_append_singleton]
+    rcases hs : modTwo s with (_ | a)
+    · simp_rw [squashStack_append_singleton_of_modTwo_none hs, count_cons, IH, add_comm]
+    · simp_rw [squashStack_append_singleton_of_modTwo_some hs]
+  generalize hs : s.length = n
+  revert s
+  induction n using Nat.strongRecOn with | ind n IH => _
+  intro s hs
+  subst hs
+  cases s with | nil => _ | cons a s => _
+  · simp_rw [squashStack_nil]
+  · cases s with | nil => _ | cons a s => _
+    · simp_rw [squashStack_singleton]
+    · simp
+      simp_rw [divTwo_cons_cons, count_cons, count_node, add_assoc, add_le_add_iff_left]
+      exact IH _ ((Nat.lt_succ_self _).trans (Nat.lt_succ_self _)) rfl
 
-section GetLast
+#eval! squashStack [leaf 1, leaf 2, leaf 3, leaf 4, leaf 5, leaf 6, leaf 7]
 
-@[simp] theorem getLast_snoc :
-    (snoc s a).getLast snoc_ne_nil = a := congrFun nilSnocCases_snoc snoc_ne_nil
+#eval modTwo [leaf 2, leaf 3]
 
-@[simp] theorem getLast_singleton (h := singleton_ne_nil) : (singleton a).getLast h = a := by
-  simp_rw [← snoc_nil, getLast_snoc]
+#eval squashStack [leaf 1, leaf 2, leaf 3, leaf 4, leaf 5, leaf 6, leaf 7]
 
-@[simp] theorem getLast_cons_nil (h := cons_ne_nil) : (cons a nil).getLast h = a :=
-  getLast_singleton
+def addOne? : Option (BTree α) → BTStack α → BTStack α
+  | none => id
+  | some a => fun s => s ++ [a]
 
-@[simp] theorem getLast_ofList {s : List (BTree α)} {hs' : ofList s ≠ nil}
-    (hs := (ofList_ne_nil_iff).mp hs') : (ofList s).getLast hs' = s.getLast hs := by
-  cases s using List.reverseRecOn
-  · exact hs.irrefl.elim
-  · simp_rw [ofList_snoc, getLast_snoc, List.getLast_append_singleton]
-
-@[simp] theorem getLast_toList (hs : s ≠ nil) (hs' := toList_ne_nil_iff.mpr hs) :
-    s.toList.getLast hs' = s.getLast hs := by
-  cases s using nilSnocCases
-  · exact hs.irrefl.elim
-  · simp_rw [toList_snoc, List.getLast_append_singleton, getLast_snoc]
-
-theorem getLast_mem {hs} : s.getLast hs ∈ s := by
-  cases s using nilSnocCases
-  · exact hs.irrefl.elim
-  · simp_rw [getLast_snoc]
-    exact mem_snoc_self
-
-end GetLast
-
-def dropLast (s : BTreeStack α) : BTreeStack α := s.nilSnocCases nil (fun s _ => s)
-
-section DropLast
-
-@[simp] theorem dropLast_nil : (nil : BTreeStack α).dropLast = nil := nilSnocCases_nil
-
-@[simp] theorem dropLast_snoc : (snoc s a).dropLast = s := nilSnocCases_snoc
-
-@[simp] theorem dropLast_singleton : (singleton a).dropLast = nil := snoc_nil ▸ dropLast_snoc
-
-@[simp] theorem dropLast_ofList {s : List (BTree α)} :
-    (ofList s).dropLast = ofList s.dropLast := by
-  cases s using List.reverseRecOn
-  · simp_rw [List.dropLast_nil, ofList_nil, dropLast_nil]
-  · simp_rw [List.dropLast_concat, ofList_snoc, dropLast_snoc]
-
-@[simp] theorem dropLast_toList :
-    s.toList.dropLast = s.dropLast.toList := by
-  cases s using nilSnocCases
-  · simp_rw [dropLast_nil, toList_nil, List.dropLast_nil]
-  · simp only [dropLast_snoc, toList_snoc, List.dropLast_concat]
-
-theorem eq_cons_of_getFirst_eq_dropLast_eq (hss' : s.dropLast = s') (hsa : s.getLast hs = a) :
-    s = snoc s' a := by
-  cases s using nilSnocCases
-  · exact hs.irrefl.elim
-  · simp_rw [getLast_snoc] at hsa
-    simp_rw [dropLast_snoc] at hss'
-    simp_rw [snoc_inj_iff]
-    exact ⟨by assumption, by assumption⟩
-
-theorem eq_snoc_iff (hs : s ≠ nil) : s = snoc s' a ↔ s.dropLast = s' ∧ s.getLast hs = a :=
-  ⟨fun h => by simp_rw [h] ; exact ⟨dropLast_snoc, getLast_snoc⟩,
-  fun h => eq_cons_of_getFirst_eq_dropLast_eq h.1 h.2⟩
-
-end DropLast
-
-def append (s t : BTreeStack α) : BTreeStack α := ofList (s.toList ++ t.toList)
-
-section Append
-
-@[simp] theorem ofList_append {s t : List (BTree α)} :
-    ofList (s ++ t) = (ofList s).append (ofList t) := rfl
-
-@[simp] theorem toList_append : (s.append t).toList = s.toList ++ t.toList := rfl
-
-@[simp] theorem append_nil : append s nil = s := List.append_nil _
-
-@[simp] theorem nil_append : append nil s = s := List.nil_append _
-
-@[simp] theorem cons_append : (cons a s).append t = cons a (s.append t) := List.cons_append _ _ _
-
-theorem append_cons_eq_snoc_append : t.append (cons a s) = (t.snoc a).append s :=
-  List.append_cons _ _ _
-
-theorem snoc_append_eq_append_cons : (t.snoc a).append s = t.append (cons a s) :=
-  append_cons_eq_snoc_append.symm
-
-@[simp] theorem append_snoc : s.append (snoc t a) = snoc (s.append t) a :=
-  (List.append_assoc _ _ _).symm
-
-@[simp] theorem append_eq_nil : s.append t = nil ↔ s = nil ∧ t = nil := List.append_eq_nil
-
-@[simp] theorem append_ne_nil : s.append t ≠ nil ↔ s ≠ nil ∨ t ≠ nil := by
-  simp_rw [ne_eq, append_eq_nil, Classical.not_and_iff_or_not_not]
-
-end Append
-
-def length (s : BTreeStack α) : ℕ :=  s.nilConsInduction 0 (fun _ _ => (· + 1))
-
-section Length
-
-@[simp] theorem length_nil : length (nil : BTreeStack α) = 0 := nilConsInduction_nil
-
-@[simp] theorem length_cons : (cons a s).length = s.length + 1 := nilConsInduction_cons
-
-@[simp] theorem length_snoc : (snoc s a).length = s.length + 1 := by
-  induction s
-  · rfl
-  · simp_rw [snoc_cons_eq_cons_snoc, length_cons, add_left_inj]
-    assumption
-
-theorem length_dropFirst : s.dropFirst.length = s.length - 1 := by
-  cases s
-  · simp_rw [dropFirst_nil, length_nil]
-  · simp_rw [dropFirst_cons, length_cons, add_tsub_cancel_right]
-
-theorem length_dropLast : s.dropLast.length = s.length - 1 := by
-  cases s using nilSnocCases
-  · simp_rw [dropLast_nil, length_nil]
-  · simp_rw [dropLast_snoc, length_snoc, add_tsub_cancel_right]
-
-@[simp] theorem length_toList : s.toList.length = s.length := by
-  induction s
-  · simp_rw [toList_nil, List.length_nil, length_nil]
-  · simp only [toList_cons, List.length_cons, length_cons, add_left_inj]
-    assumption
-
-@[simp] theorem length_ofList {s : List (BTree α)} : (ofList s).length = s.length := by
-  induction s
-  · simp only [ofList_nil, length_nil, List.length_nil]
-  · simp_rw [List.length_cons, ofList_cons, length_cons, add_left_inj]
-    assumption
-
-@[simp] theorem length_eq_zero : s.length = 0 ↔ s = nil := by
-  rw [← length_toList, List.length_eq_zero, toList_eq_nil_iff]
-
-instance : NeZero ((cons a s).length) := ⟨length_cons ▸ Nat.succ_ne_zero _⟩
-
-instance : NeZero ((snoc s a).length) := ⟨length_snoc ▸ Nat.succ_ne_zero _⟩
-
-theorem length_ne_zero : s.length ≠ 0 ↔ s ≠ nil := length_eq_zero.not
-
-theorem length_pos : 0 < s.length ↔ s ≠ nil := Nat.pos_iff_ne_zero.trans length_ne_zero
-
-theorem one_le_length : 1 ≤ s.length ↔ s ≠ nil := length_pos
-
-theorem exists_of_length_ne_zero (ht : t.length ≠ 0) : ∃ a s, t = cons a s := by
-  cases t using nilConsCases
-  · exact (ht length_nil).elim
-  · exact ⟨_, _, rfl⟩
-
-@[simp] theorem length_singleton : (singleton a).length = 1 := rfl
-
-theorem length_eq_one : s.length = 1 ↔ ∃ a, s = singleton a := by
-  cases s using nilConsCases
-  · simp_rw [length_nil, zero_ne_one, nil_ne_singleton, exists_false]
-  · simp_rw [length_cons, add_left_eq_self, length_eq_zero,
-      cons_eq_singleton_iff, exists_and_right, exists_eq', true_and]
-
-end Length
-
-def firstHeight (s : BTreeStack α) : ℕ := s.nilConsCases 0 (flip <| fun _ => BTree.height)
+def firstHeight : BTStack α → ℕ
+  | [] => 0
+  | (a :: _) => a.height
 
 section FirstHeight
 
-@[simp] theorem firstHeight_nil : (nil : BTreeStack α).firstHeight = 0 := nilConsCases_nil
+@[simp] theorem firstHeight_nil : firstHeight ([] : BTStack α) = 0 := rfl
 
-@[simp] theorem firstHeight_cons : (cons a s).firstHeight = a.height := nilConsCases_cons
+@[simp] theorem firstHeight_singleton : firstHeight [a] = a.height := rfl
 
-@[simp] theorem firstHeight_singleton : (singleton a).firstHeight = a.height :=
-  cons_nil ▸ firstHeight_cons
+@[simp] theorem firstHeight_cons : firstHeight (a :: s) = a.height := rfl
 
-@[simp] theorem firstHeight_snoc_nil : (snoc nil a).firstHeight = a.height := by
-  simp_rw [snoc_nil_eq_cons_nil, firstHeight_cons]
-
-@[simp] theorem firstHeight_snoc_snoc :
-    (snoc (snoc s b) a).firstHeight = (snoc s b).firstHeight := by
+@[simp] theorem firstHeight_append_singleton (hs : s ≠ []) :
+    firstHeight (s ++ [a]) = firstHeight s := by
   cases s
-  · simp_rw [snoc_nil_eq_cons_nil, snoc_cons_eq_cons_snoc, firstHeight_cons]
-  · simp_rw [snoc_cons_eq_cons_snoc, firstHeight_cons]
+  · contradiction
+  · rfl
 
-@[simp] theorem firstHeight_snoc_of_ne_nil (hs : s ≠ nil) :
-    (snoc s a).firstHeight = s.firstHeight := by
-  cases s using nilSnocCases
-  · exact hs.irrefl.elim
-  · simp_rw [firstHeight_snoc_snoc]
+@[simp] theorem firstHeight_append (hs : s ≠ []) :
+    firstHeight (s ++ t) = firstHeight s := by
+  cases s
+  · contradiction
+  · rfl
 
-theorem firstHeight_eq_getFirst_height (hs) : s.firstHeight = (s.getFirst hs).height := by
-  cases s using nilConsCases
-  · exact hs.irrefl.elim
-  · simp_rw [getFirst_cons, firstHeight_cons]
+theorem firstHeight_eq_head_height (hs) : firstHeight s = (s.head hs).height := by
+  cases s
+  · contradiction
+  · rfl
 
 end FirstHeight
 
-def lastHeight (s : BTreeStack α) : ℕ := s.nilSnocCases 0 (fun _ => BTree.height)
+def lastHeight : BTStack α → ℕ
+  | [] => 0
+  | [a] => a.height
+  | _ :: b :: s => lastHeight (b :: s)
 
 section LastHeight
 
-@[simp] theorem lastHeight_nil : (nil : BTreeStack α).lastHeight = 0 := nilSnocCases_nil
+@[simp] theorem lastHeight_nil : lastHeight ([] : BTStack α) = 0 := rfl
 
-@[simp] theorem lastHeight_snoc : (snoc s a).lastHeight = a.height := nilSnocCases_snoc
+@[simp] theorem lastHeight_singleton : lastHeight [a] = a.height := rfl
 
-@[simp] theorem lastHeight_singleton : (singleton a).lastHeight = a.height :=
-  snoc_nil ▸ nilSnocCases_snoc
+@[simp] theorem lastHeight_cons (hs : s ≠ []) : lastHeight (a :: s) = lastHeight s := by
+  cases s
+  · contradiction
+  · rfl
 
-@[simp] theorem lastHeight_cons_nil : (cons a nil).lastHeight = a.height := by
-  simp_rw [cons_nil_eq_snoc_nil, lastHeight_snoc]
+@[simp] theorem lastHeight_append_singleton : lastHeight (s ++ [a]) = a.height := by
+  induction s with | nil => _ | cons _ s => _
+  · rfl
+  · cases s
+    · rfl
+    · assumption
 
-@[simp] theorem lastHeight_cons_cons :
-    (cons a (cons b s)).lastHeight = (cons b s).lastHeight := by
-  cases s using nilSnocCases
-  · simp_rw [cons_nil_eq_snoc_nil, cons_snoc_eq_snoc_cons, lastHeight_snoc]
-  · simp_rw [cons_snoc_eq_snoc_cons, lastHeight_snoc]
+@[simp] theorem lastHeight_reverse_eq_firstHeight {s : BTStack α} :
+    lastHeight s.reverse = firstHeight s := by
+  cases s
+  · rfl
+  · simp_rw [List.reverse_cons, lastHeight_append_singleton, firstHeight_cons]
 
-@[simp] theorem lastHeight_cons_of_ne_nil (hs : s ≠ nil) :
-    (cons a s).lastHeight = s.lastHeight := by
-  cases s using nilConsCases
+@[simp] theorem firstHeight_reverse_eq_lastHeight {s : BTStack α} :
+    firstHeight s.reverse = lastHeight s := by
+  rw [← s.reverse_reverse, lastHeight_reverse_eq_firstHeight, s.reverse_reverse]
+
+theorem lastHeight_eq_getLast_height (hs) : lastHeight s = (s.getLast hs).height := by
+  cases s using List.reverseRecOn
   · exact hs.irrefl.elim
-  · simp_rw [lastHeight_cons_cons]
-
-theorem lastHeight_eq_getLast_height (hs) : s.lastHeight = (s.getLast hs).height := by
-  cases s using nilSnocCases
-  · exact hs.irrefl.elim
-  · simp_rw [getLast_snoc, lastHeight_snoc]
+  · simp_rw [lastHeight_append_singleton, List.getLast_append_singleton]
 
 end LastHeight
 
-def IsSMH (s : BTreeStack α) := s.toList.Sorted (fun a b => a.height < b.height)
+def IsSMH (s : BTStack α) := s.Sorted (fun a b => a.height < b.height)
 
 section IsSMH
 
-instance : IsStrictWeakOrder (BTree α) (fun a b => a.height < b.height) where
-  irrefl a := lt_irrefl a.height
-  trans _ _ _ := lt_trans
-  incomp_trans _ _ _ := IsStrictWeakOrder.incomp_trans _ _ _
-
-instance : DecidableRel (fun (a : BTree α) b => a.height < b.height) :=
+instance : DecidableRel (fun (a : BTree α) (b : BTree α) => a.height < b.height) :=
     fun a b => a.height.decLt b.height
 
 instance : Decidable (IsSMH s) := List.decidableSorted _
 
-@[simp] theorem IsSMH_nil : (nil (α := α)).IsSMH := List.sorted_nil
+@[simp] theorem IsSMH_nil : IsSMH (α := α) [] := List.sorted_nil
 
-@[simp] theorem IsSMH_cons_iff : (cons a s).IsSMH ↔ (∀ b ∈ s, a.height < b.height) ∧ s.IsSMH :=
+@[simp] theorem IsSMH_cons_iff : IsSMH (a :: s) ↔ (∀ b ∈ s, a.height < b.height) ∧ IsSMH s :=
   List.pairwise_cons
 
-@[simp] theorem IsSMH_snoc_iff : (snoc s a).IsSMH ↔ s.IsSMH ∧
-    (∀ b ∈ s, b.height < a.height) := List.pairwise_append.trans <| by
-  simp_rw [List.mem_singleton, forall_eq, List.pairwise_singleton, true_and]
-  exact Iff.rfl
+@[simp] theorem IsSMH_singleton : IsSMH [a] := List.sorted_singleton _
 
-@[simp] theorem IsSMH_singleton : (singleton a).IsSMH := List.sorted_singleton _
+@[simp] theorem IsSMH_append_iff : IsSMH (s ++ t) ↔
+  IsSMH s ∧ IsSMH t ∧ ∀ a ∈ s, ∀ b ∈ t, a.height < b.height := List.pairwise_append
 
-@[simp] theorem IsSMH_cons_nil : (cons a nil).IsSMH := List.sorted_singleton _
+@[simp] theorem IsSMH_append_singleton_iff : IsSMH (s ++ [a]) ↔ IsSMH s ∧
+    (∀ b ∈ s, b.height < a.height) := by
+  simp_rw [IsSMH_append_iff, IsSMH_singleton, List.mem_singleton, forall_eq, true_and]
 
-@[simp] theorem IsSMH_snoc_nil : (snoc nil a).IsSMH := List.sorted_singleton _
 
-@[simp] theorem IsSMH.cons_of (h : ∀ b ∈ s, a.height < b.height) (hsh : s.IsSMH):
-    (cons a s).IsSMH := IsSMH_cons_iff.mpr ⟨h, hsh⟩
+@[simp] theorem IsSMH.cons_of (h : ∀ b ∈ s, a.height < b.height) (hsh : IsSMH s):
+    IsSMH (a :: s) := IsSMH_cons_iff.mpr ⟨h, hsh⟩
 
-@[simp] theorem IsSMH.snoc_of (hsh : s.IsSMH) (h : ∀ b ∈ s, b.height < a.height) :
-    (snoc s a).IsSMH := IsSMH_snoc_iff.mpr ⟨hsh, h⟩
+@[simp] theorem IsSMH.append_singleton_of (hsh : IsSMH s) (h : ∀ b ∈ s, b.height < a.height) :
+    IsSMH (s ++ [a]) := IsSMH_append_singleton_iff.mpr ⟨hsh, h⟩
 
-theorem IsSMH.of_cons : (cons a s).IsSMH → s.IsSMH := And.right ∘ IsSMH_cons_iff.mp
+theorem IsSMH.of_cons : IsSMH (a :: s) → IsSMH s := And.right ∘ IsSMH_cons_iff.mp
 
-theorem IsSMH.of_snoc : (snoc s a).IsSMH → s.IsSMH := And.left ∘ IsSMH_snoc_iff.mp
+theorem IsSMH.of_append_singleton : IsSMH (s ++ [a]) → IsSMH s := And.left ∘ IsSMH_append_singleton_iff.mp
 
-theorem IsSMH.cons_height_lt_height_of_mem : (cons a s).IsSMH →
+theorem IsSMH.cons_height_lt_height_of_mem : IsSMH (a :: s) →
     ∀ b ∈ s, a.height < b.height := And.left ∘ IsSMH_cons_iff.mp
 
-theorem IsSMH.cons_height_le_height_of_mem (hsh : (cons a s).IsSMH) :
+theorem IsSMH.cons_height_le_height_of_mem (hsh : IsSMH (a :: s)) :
     ∀ b ∈ s, a.height ≤ b.height := fun _ hb => (hsh.cons_height_lt_height_of_mem _ hb).le
 
-theorem IsSMH.height_lt_snoc_height_of_mem : (snoc s a).IsSMH →
-    ∀ b ∈ s, b.height < a.height := And.right ∘ IsSMH_snoc_iff.mp
+theorem IsSMH.height_lt_append_singleton_height_of_mem : IsSMH (s ++ [a]) →
+    ∀ b ∈ s, b.height < a.height := And.right ∘ IsSMH_append_singleton_iff.mp
 
-theorem IsSMH.height_le_snoc_height_of_mem (hsh : (snoc s a).IsSMH) :
-    ∀ b ∈ s, b.height ≤ a.height := fun _ hb => (hsh.height_lt_snoc_height_of_mem _ hb).le
+theorem IsSMH.height_le_append_singleton_height_of_mem (hsh : IsSMH (s ++ [a])) :
+    ∀ b ∈ s, b.height ≤ a.height := fun _ hb => (hsh.height_lt_append_singleton_height_of_mem _ hb).le
 
-theorem IsSMH.cons_of_cons {b : BTree α} (hab : a.height < b.height) (hsh : (cons b s).IsSMH) :
-    (cons a s).IsSMH := IsSMH.cons_of
+theorem IsSMH.cons_of_cons {b : BTree α} (hab : a.height < b.height) (hsh : IsSMH (b :: s)) :
+    IsSMH (a :: s) := IsSMH.cons_of
   (fun _ hb => hab.trans <| hsh.cons_height_lt_height_of_mem _ hb) hsh.of_cons
 
-theorem IsSMH.cons_cons {b : BTree α} (hab : a.height < b.height) (hsh : (cons b s).IsSMH) :
-    (cons a (cons b s)).IsSMH := hsh.cons_of
-    (fun _ hb => (mem_cons.mp hb).elim (fun h => h ▸ hab)
+theorem IsSMH.cons_cons {b : BTree α} (hab : a.height < b.height) (hsh : IsSMH (b :: s)) :
+    IsSMH (a :: (b :: s)) := hsh.cons_of
+    (fun _ hb => (List.mem_cons.mp hb).elim (fun h => h ▸ hab)
     (fun hb => hab.trans <| hsh.cons_height_lt_height_of_mem _ hb))
 
-theorem IsSMH.snoc_of_snoc {b : BTree α} (hba : b.height < a.height) (hsh : (snoc s b).IsSMH) :
-    (snoc s a).IsSMH := IsSMH.snoc_of
-  hsh.of_snoc (fun _ hb => hba.trans' <| hsh.height_lt_snoc_height_of_mem _ hb)
+theorem IsSMH.append_singleton_of_append_singleton {b : BTree α} (hba : b.height < a.height) (hsh : IsSMH  (s ++ [b])) :
+    IsSMH (s ++ [a]) := IsSMH.append_singleton_of
+  hsh.of_append_singleton (fun _ hb => hba.trans' <| hsh.height_lt_append_singleton_height_of_mem _ hb)
 
-theorem IsSMH.snoc_snoc {b : BTree α} (hba : b.height < a.height) (hsh : (snoc s b).IsSMH) :
-    (snoc (snoc s b) a).IsSMH := hsh.snoc_of
-    (fun _ hb => (mem_snoc.mp hb).elim
-    (fun hb => hba.trans' <| hsh.height_lt_snoc_height_of_mem _ hb) (fun h => h ▸ hba))
+theorem IsSMH.append_singleton_append_singleton {b : BTree α} (hba : b.height < a.height) (hsh : IsSMH (s ++ [b])) :
+    IsSMH ((s ++ [b]) ++ [a]) := hsh.append_singleton_of
+    (fun _ hb => (List.mem_append.mp hb).elim
+    (fun hb => hba.trans' <| hsh.height_lt_append_singleton_height_of_mem _ hb)
+    (fun h => List.eq_of_mem_singleton h ▸ hba))
 
-theorem IsSMH.cons_height_lt_snoc_height {b : BTree α}
-      (hsh : (cons a (snoc s b)).IsSMH) : a.height < b.height :=
-      hsh.cons_height_lt_height_of_mem _ mem_snoc_self
+theorem IsSMH.cons_height_lt_append_singleton_height {b : BTree α}
+      (hsh : IsSMH (a :: (s ++ [b]))) : a.height < b.height :=
+      hsh.cons_height_lt_height_of_mem _ (List.mem_append_right _ (List.mem_singleton_self _))
 
-theorem IsSMH.cons_height_lt_snoc_height' {b : BTree α}
-      (hsh : (snoc (cons a s) b).IsSMH) : a.height < b.height :=
-      hsh.height_lt_snoc_height_of_mem _ mem_cons_self
+theorem IsSMH.cons_height_lt_append_singleton_height' {b : BTree α}
+      (hsh : IsSMH ((a :: s) ++ [b])) : a.height < b.height :=
+      hsh.height_lt_append_singleton_height_of_mem _ (List.mem_cons_self _ _)
 
-theorem IsSMH.height_cons_lt_firstHeight (hsh : (cons a s).IsSMH) (hs : s ≠ nil) :
+theorem IsSMH.height_cons_lt_firstHeight (hsh : IsSMH (a :: s)) (hs : s ≠ []) :
     a.height < s.firstHeight :=
-  (hsh.cons_height_lt_height_of_mem _ getFirst_mem).trans_eq
-    (firstHeight_eq_getFirst_height hs).symm
+  (hsh.cons_height_lt_height_of_mem _ (List.head_mem _)).trans_eq
+    (firstHeight_eq_head_height hs).symm
 
-theorem IsSMH.firstHeight_le_mem (hsh : s.IsSMH) : ∀ a ∈ s, s.firstHeight ≤ a.height := by
+theorem IsSMH.firstHeight_le_mem (hsh : IsSMH s) : ∀ a ∈ s, s.firstHeight ≤ a.height := by
   cases s with | nil => _ | cons a s => _
-  · exact fun _ ha => (not_mem_nil ha).elim
-  · simp_rw [firstHeight_cons, mem_cons]
+  · exact fun _ ha => (List.not_mem_nil _ ha).elim
+  · simp_rw [firstHeight_cons, List.mem_cons]
     exact fun _ ha => ha.elim
       (fun H => H ▸ le_rfl)
       (fun hb => hsh.cons_height_le_height_of_mem _ hb)
 
-theorem IsSMH.firstHeight_cons_lt (hsh : (cons a s).IsSMH) :
-    ∀ b ∈ s, (cons a s).firstHeight < b.height := by
+theorem IsSMH.firstHeight_cons_lt (hsh : IsSMH (a :: s)) :
+    ∀ b ∈ s, firstHeight (a :: s) < b.height := by
   simp_rw [firstHeight_cons]
   exact hsh.cons_height_lt_height_of_mem
 
-theorem IsSMH.lastHeight_lt_height_snoc (hsh : (snoc s a).IsSMH) (hs : s ≠ nil) :
+theorem IsSMH.lastHeight_lt_height_append_singleton (hsh : IsSMH (s ++ [a])) (hs : s ≠ []) :
     s.lastHeight < a.height :=
-  (hsh.height_lt_snoc_height_of_mem _ getLast_mem).trans_eq' (lastHeight_eq_getLast_height hs)
+  (hsh.height_lt_append_singleton_height_of_mem _ (List.getLast_mem _)).trans_eq'
+  (lastHeight_eq_getLast_height hs)
 
-theorem IsSMH.mem_le_lastHeight (hsh : s.IsSMH) : ∀ a ∈ s, a.height ≤ s.lastHeight := by
-  cases s using nilSnocCases with | nil => _ | snoc s a => _
-  · exact fun _ ha => (not_mem_nil ha).elim
-  · simp_rw [lastHeight_snoc, mem_snoc]
+theorem IsSMH.mem_le_lastHeight (hsh : IsSMH s) : ∀ a ∈ s, a.height ≤ s.lastHeight := by
+  cases s using List.reverseRecOn with | nil => _ | append_singleton s a => _
+  · exact fun _ ha => (List.not_mem_nil _ ha).elim
+  · simp_rw [lastHeight_append_singleton, List.mem_append, List.mem_singleton]
     exact fun _ ha => ha.elim
-      (fun hb => hsh.height_le_snoc_height_of_mem _ hb)
+      (fun hb => hsh.height_le_append_singleton_height_of_mem _ hb)
       (fun H => H ▸ le_rfl)
 
-theorem IsSMH.lt_lastHeight_snoc (hsh : (snoc s a).IsSMH) :
-    ∀ b ∈ s, b.height < (snoc s a).lastHeight  := by
-  simp_rw [lastHeight_snoc]
-  exact hsh.height_lt_snoc_height_of_mem
+theorem IsSMH.lt_lastHeight_append_singleton (hsh : IsSMH (s ++ [a])) :
+    ∀ b ∈ s, b.height < (s ++ [a]).lastHeight  := by
+  simp_rw [lastHeight_append_singleton]
+  exact hsh.height_lt_append_singleton_height_of_mem
 
-theorem IsSMH.firstHeight_lt_lastHeight_iff_one_lt_length (hsh : s.IsSMH) (hs : s ≠ nil) :
+theorem IsSMH.firstHeight_lt_lastHeight_iff_one_lt_length (hsh : IsSMH s) (hs : s ≠ []) :
     s.firstHeight < s.lastHeight ↔ 1 < s.length := by
-  cases s using nilConsCases with | nil => _ | cons _ s => _
+  cases s with | nil => _ | cons _ s => _
   · exact hs.irrefl.elim
-  · simp_rw [length_cons, lt_add_iff_pos_left]
-    cases s using nilSnocCases
-    · simp_rw [lastHeight_cons_nil, firstHeight_cons, length_nil, lt_irrefl]
-    · simp_rw [firstHeight_cons, cons_snoc_eq_snoc_cons, lastHeight_snoc, NeZero.pos,
-        hsh.cons_height_lt_snoc_height]
+  · simp_rw [List.length_cons, lt_add_iff_pos_left]
+    cases s using List.reverseRecOn
+    · simp_rw [firstHeight_cons, lastHeight_singleton, List.length_nil, lt_irrefl]
+    · simp_rw [firstHeight_cons, ← List.cons_append, lastHeight_append_singleton,
+        List.length_append, List.length_singleton, NeZero.pos,
+        hsh.cons_height_lt_append_singleton_height]
 
-theorem IsSMH.firstHeight_le_lastHeight (hsh : s.IsSMH) (hs : s ≠ nil) :
+theorem IsSMH.firstHeight_le_lastHeight (hsh : IsSMH s) (hs : s ≠ []) :
     s.firstHeight ≤ s.lastHeight := by
-  have hs' := one_le_length.mpr hs
+  have hs' := Nat.one_le_of_lt (List.length_pos_of_ne_nil hs)
   rcases hs'.eq_or_gt with (hs' | hs')
-  · rw [length_eq_one] at hs'
+  · rw [List.length_eq_one_iff] at hs'
     rcases hs' with ⟨_, rfl⟩
     simp_rw [firstHeight_singleton, lastHeight_singleton, le_rfl]
   · rw [← hsh.firstHeight_lt_lastHeight_iff_one_lt_length hs] at hs'
     exact hs'.le
 
-theorem length_le_lastHeight_sub_firstHeight (hsh : s.IsSMH) :
+theorem length_le_lastHeight_sub_firstHeight (hsh : IsSMH s) :
     s.length ≤ (s.lastHeight - s.firstHeight) + 1 := by
-  induction s using nilConsInduction with | nil => _ | cons a s IH => _
-  · simp_rw [length_nil, lastHeight_nil, firstHeight_nil, tsub_zero, zero_add, zero_le_one]
+  induction s with | nil => _ | cons a s IH => _
+  · simp_rw [List.length_nil, lastHeight_nil, firstHeight_nil, tsub_zero, zero_add, zero_le_one]
   · specialize IH hsh.of_cons
-    cases s using nilSnocCases
-    · simp_rw [cons_nil, length_singleton, lastHeight_singleton, firstHeight_singleton,
-        Nat.sub_self, zero_add, le_refl]
-    · simp_rw [length_snoc, lastHeight_snoc, Nat.succ_le_succ_iff,
-        firstHeight_eq_getFirst_height snoc_ne_nil] at IH
-      simp_rw [length_cons, length_snoc, firstHeight_cons, cons_snoc_eq_snoc_cons,
-        lastHeight_snoc, Nat.succ_le_succ_iff, Nat.succ_le_iff]
-      exact IH.trans_lt (Nat.sub_lt_sub_left hsh.cons_height_lt_snoc_height
-        (hsh.cons_height_lt_height_of_mem _ getFirst_mem))
+    cases s using List.reverseRecOn
+    · simp_rw [List.length_cons, List.length_nil, zero_add, lastHeight_singleton,
+        firstHeight_cons, tsub_self, le_refl]
+    · simp_rw [List.length_append, List.length_cons, List.length_nil, zero_add,
+        lastHeight_append_singleton, add_le_add_iff_right,
+        firstHeight_eq_head_height
+        (List.append_ne_nil_of_right_ne_nil _ (List.cons_ne_nil _ _))] at IH
+      simp_rw [List.length_cons, List.length_append, List.length_singleton, firstHeight_cons,
+        ← List.cons_append,
+        lastHeight_append_singleton, Nat.succ_le_succ_iff, Nat.succ_le_iff]
+      exact IH.trans_lt (Nat.sub_lt_sub_left hsh.cons_height_lt_append_singleton_height
+        (hsh.cons_height_lt_height_of_mem _ (List.head_mem _)))
 
 end IsSMH
 
-def IsPerfect (s : BTreeStack α) := ∀ b ∈ s, b.IsPerfect
+def IsPerfect (s : BTStack α) := ∀ b ∈ s, b.IsPerfect
 
 section IsPerfect
 
-@[simp] theorem IsPerfect_def : s.IsPerfect ↔ ∀ b ∈ s, b.IsPerfect := Iff.rfl
+@[simp] theorem IsPerfect_def : IsPerfect s ↔ ∀ b ∈ s, b.IsPerfect := Iff.rfl
 
-@[simp] theorem IsPerfect_nil : (nil : BTreeStack α).IsPerfect := fun _ h => (not_mem_nil h).elim
+@[simp] theorem IsPerfect_nil : IsPerfect ([] : BTStack α) :=
+  fun _ h => (List.not_mem_nil _ h).elim
 
-@[simp] theorem IsPerfect_cons_iff : (cons a s).IsPerfect ↔ a.IsPerfect ∧ s.IsPerfect := by
-  simp_rw [IsPerfect_def, mem_cons, forall_eq_or_imp]
+@[simp] theorem IsPerfect_cons_iff : IsPerfect (a :: s) ↔ a.IsPerfect ∧ IsPerfect s := by
+  simp_rw [IsPerfect_def, List.mem_cons, forall_eq_or_imp]
 
-@[simp] theorem IsPerfect.of_cons_head : (cons a s).IsPerfect → a.IsPerfect :=
+@[simp] theorem IsPerfect.of_cons_head : IsPerfect (a :: s) → a.IsPerfect :=
   fun h => (IsPerfect_cons_iff.mp h).1
-@[simp] theorem IsPerfect.of_cons_tail : (cons a s).IsPerfect → s.IsPerfect :=
+@[simp] theorem IsPerfect.of_cons_tail : IsPerfect (a :: s) → IsPerfect s :=
   fun h => (IsPerfect_cons_iff.mp h).2
 
-theorem IsPerfect.cons_of (ha : a.IsPerfect) : s.IsPerfect → (cons a s).IsPerfect :=
+theorem IsPerfect.cons_of (ha : a.IsPerfect) : IsPerfect s → IsPerfect (a :: s) :=
   fun h => IsPerfect_cons_iff.mpr ⟨ha, h⟩
 
-@[simp] theorem IsPerfect_snoc_iff : (snoc s a).IsPerfect ↔ s.IsPerfect ∧ a.IsPerfect := by
-  simp_rw [IsPerfect_def, mem_snoc, or_comm, forall_eq_or_imp, and_comm]
+@[simp] theorem IsPerfect_append :
+    IsPerfect (s ++ t) ↔ IsPerfect s ∧ IsPerfect t := by
+  simp_rw [IsPerfect_def, List.mem_append, or_imp, forall_and]
 
-@[simp] theorem IsPerfect_singleton_iff : (singleton a).IsPerfect ↔ a.IsPerfect := by
-  simp_rw [← cons_nil, IsPerfect_cons_iff, IsPerfect_nil, and_true]
+@[simp] theorem IsPerfect_singleton_iff : IsPerfect [a] ↔ a.IsPerfect := by
+  simp_rw [IsPerfect_def, List.mem_singleton, forall_eq]
+
+@[simp] theorem IsPerfect_append_singleton_iff :
+    IsPerfect (s ++ [a]) ↔ IsPerfect s ∧ a.IsPerfect := by
+  simp_rw [IsPerfect_append, IsPerfect_singleton_iff]
 
 end IsPerfect
 
-def getAtHeight (s : BTreeStack α) (n : ℕ) : Option (BTree α) :=
+def getAtHeight (s : BTStack α) (n : ℕ) : Option (BTree α) :=
   s.nilConsInduction none
   (fun a _ get => match (cmp n a.height) with
     | .lt => none
@@ -1613,7 +1401,7 @@ theorem exists_mem_eq_height_of_getAtHeight_isSome (hn : (s.getAtHeight n).isSom
   simp_rw [not_exists, not_and, Bool.not_eq_true, Option.not_isSome, Option.isNone_iff_eq_none]
   exact getAtHeight_eq_none_of_forall_ne_height
 
-theorem IsSMH.getAtHeight_height_of_mem (hsh : s.IsSMH) (ha : a ∈ s) :
+theorem IsSMH.getAtHeight_height_of_mem (hsh : IsSMH s) (ha : a ∈ s) :
     s.getAtHeight a.height = some a := by
   induction s with | nil => _ | cons b s IH => _
   · exact (not_mem_nil ha).elim
@@ -1624,18 +1412,18 @@ theorem IsSMH.getAtHeight_height_of_mem (hsh : s.IsSMH) (ha : a ∈ s) :
       rw [getAtHeight_cons_of_gt_height (hsh.left _ ha)]
       exact IH hsh.right ha
 
-theorem IsSMH.getAtHeight_isSome_iff (hsh : s.IsSMH) :
+theorem IsSMH.getAtHeight_isSome_iff (hsh : IsSMH s) :
     (s.getAtHeight n).isSome ↔ ∃ a ∈ s, n = a.height := by
   refine ⟨exists_mem_eq_height_of_getAtHeight_isSome, ?_⟩
   rintro ⟨_, ha, rfl⟩
   rw [hsh.getAtHeight_height_of_mem ha, Option.isSome_some]
 
-theorem IsSMH.getAtHeight_isNone_iff (hsh : s.IsSMH) :
+theorem IsSMH.getAtHeight_isNone_iff (hsh : IsSMH s) :
     (s.getAtHeight n).isNone ↔ ∀ a ∈ s, n ≠ a.height := by
   simp_rw [← Option.not_isSome, Bool.eq_false_iff, ne_eq, hsh.getAtHeight_isSome_iff,
     not_exists, not_and]
 
-theorem IsSMH.getAtHeight_of_lastHeight_lt (hsh : s.IsSMH) (hn : s.lastHeight < n) :
+theorem IsSMH.getAtHeight_of_lastHeight_lt (hsh : IsSMH s) (hn : s.lastHeight < n) :
     s.getAtHeight n = none := by
   apply Option.eq_none_of_isNone
   rw [hsh.getAtHeight_isNone_iff]
@@ -1645,7 +1433,7 @@ theorem IsSMH.getAtHeight_of_lastHeight_lt (hsh : s.IsSMH) (hn : s.lastHeight < 
 
 end GetAtHeight
 
-def push (s : BTreeStack α) : BTree α → BTreeStack α :=
+def push (s : BTStack α) : BTree α → BTStack α :=
   s.nilConsInduction (singleton) (fun a s push b =>
     if a.height ≤ b.height then push (node (a.addToHeight (b.height - a.height)) b)
     else cons b (cons a s))
@@ -1766,7 +1554,7 @@ theorem push_eq_cons_iff_length_eq_succ :
       exact fun H => ((Nat.le_of_succ_le_succ (H.symm.trans_le length_push_le)).not_lt
         (Nat.lt_succ_self _)).elim
 
-theorem IsSMH.push_of (hsh : s.IsSMH) : (s.push b).IsSMH := by
+theorem IsSMH.push_of IsSMH (hsh : IsSMH s) : (s.push b) := by
   induction s generalizing b with | nil => _ | cons a s IH => _
   · simp_rw [push_nil, IsSMH_singleton]
   · by_cases hab : a.height ≤ b.height
@@ -1775,8 +1563,8 @@ theorem IsSMH.push_of (hsh : s.IsSMH) : (s.push b).IsSMH := by
     · simp_rw [push_cons_of_height_lt (lt_of_not_le hab)]
       exact hsh.cons_cons (lt_of_not_le hab)
 
-theorem IsPerfect.push_of_IsPerfect (hb : b.IsPerfect) (has : s.IsPerfect) :
-    (s.push b).IsPerfect := by
+theorem IsPerfect.push_of_IsPerfect (hb : b.IsPerfect) (has : IsPerfect s) :
+    IsPerfect (s.push b) := by
   induction s generalizing b with | nil => _ | cons a s IH => _
   · simp_rw [push_nil, IsPerfect_singleton_iff, hb]
   · by_cases hab : a.height ≤ b.height
@@ -1788,7 +1576,7 @@ theorem IsPerfect.push_of_IsPerfect (hb : b.IsPerfect) (has : s.IsPerfect) :
       simp_rw [push_cons_of_height_lt (lt_of_not_le hab), IsPerfect_cons_iff]
       exact ⟨hb, has⟩
 
-theorem IsSMH.height_ge_of_mem_push (hc : c ∈ s.push b) (hsh : s.IsSMH) :
+theorem IsSMH.height_ge_of_mem_push (hc : c ∈ s.push b) (hsh : IsSMH s) :
     b.height ≤ c.height := by
   induction s generalizing b c with | nil => _ | cons a s IH => _
   · simp_rw [mem_push_nil.mp hc, le_rfl]
@@ -1805,18 +1593,18 @@ theorem IsSMH.height_ge_of_mem_push (hc : c ∈ s.push b) (hsh : s.IsSMH) :
 
 end Push
 
-def pushStack (s : BTreeStack α) (p : BTreeStack α) : BTreeStack α := p.toList.foldr (flip push) s
+def pushStack (s : BTStack α) (p : BTStack α) : BTStack α := p.toList.foldr (flip push) s
 
 section PushStack
 
-variable {u v : BTreeStack α}
+variable {u v : BTStack α}
 
 @[simp] theorem pushStack_nil_right : s.pushStack nil = s := List.foldr_nil
 
 @[simp] theorem pushStack_cons_right : s.pushStack (cons a t) = (s.pushStack t).push a :=
     List.foldr_cons _
 
-@[simp] theorem pushStack_snoc_right : s.pushStack (snoc t a) = (s.push a).pushStack t :=
+@[simp] theorem pushStack_append_singleton_right : s.pushStack (append_singleton t a) = (s.push a).pushStack t :=
     List.foldr_append _ _ _ _
 
 @[simp] theorem pushStack_singleton : s.pushStack (singleton a) = s.push a := by
@@ -1825,15 +1613,15 @@ variable {u v : BTreeStack α}
 @[simp] theorem pushStack_append : s.pushStack (u.append v) = (s.pushStack v).pushStack u :=
     List.foldr_append _ _ _ _
 
-@[simp] theorem IsSMH.pushStack (hsh : s.IsSMH) (hth : t.IsSMH) : (s.pushStack t).IsSMH := by
-  induction t using nilSnocInduction generalizing s with | nil => _ | snoc t a IH => _
+@[simp] theorem IsSMH.pushStack IsSMH (hsh : IsSMH s) (hth : t.IsSMH) : (s.pushStack t) := by
+  induction t using nilappend_singletonInduction generalizing s with | nil => _ | append_singleton t a IH => _
   · rw [pushStack_nil_right]
     exact hsh
-  · rw [pushStack_snoc_right]
-    exact IH hsh.push_of hth.of_snoc
+  · rw [pushStack_append_singleton_right]
+    exact IH hsh.push_of hth.of_append_singleton
 
-@[simp] theorem IsPerfect.pushStack (hs : s.IsPerfect) (ht : t.IsPerfect) :
-    (s.pushStack t).IsPerfect := by
+@[simp] theorem IsPerfect.pushStack (hs : IsPerfect s) (ht : t.IsPerfect) :
+    IsPerfect (s.pushStack t) := by
   induction t generalizing s with | nil => _ | cons a t IH => _
   · exact hs
   · simp_rw [pushStack_cons_right]
@@ -1841,25 +1629,25 @@ variable {u v : BTreeStack α}
 
 theorem pushStack_eq_append_of_lt (hst : s ≠ nil → t ≠ nil → t.lastHeight < s.firstHeight)
   (hth : t.IsSMH) : s.pushStack t = t.append s := by
-  induction t using nilSnocInduction generalizing s with | nil => _ | snoc t a IH => _
+  induction t using nilappend_singletonInduction generalizing s with | nil => _ | append_singleton t a IH => _
   · simp_rw [pushStack_nil_right, nil_append]
-  · simp_rw [ne_eq, snoc_ne_nil, not_false_eq_true, lastHeight_snoc, forall_const] at hst
-    simp_rw [pushStack_snoc_right]
+  · simp_rw [ne_eq, append_singleton_ne_nil, not_false_eq_true, lastHeight_append_singleton, forall_const] at hst
+    simp_rw [pushStack_append_singleton_right]
     rw [push_of_height_lt hst]
-    refine (IH ?_ hth.of_snoc).trans append_cons_eq_snoc_append
+    refine (IH ?_ hth.of_append_singleton).trans append_cons_eq_append_singleton_append
     simp_rw [ne_eq, cons_ne_nil, not_false_eq_true, firstHeight_cons, forall_const]
-    exact hth.lastHeight_lt_height_snoc
+    exact hth.lastHeight_lt_height_append_singleton
 
 end PushStack
 
-def ofStack (s : BTreeStack α) := nil.pushStack s
+def ofStack (s : BTStack α) := nil.pushStack s
 
 section OfStack
 
-@[simp] theorem ofStack_nil : (nil : BTreeStack α).ofStack = nil := rfl
+@[simp] theorem ofStack_nil : (nil : BTStack α).ofStack = nil := rfl
 
-@[simp] theorem ofStack_snoc : (snoc s a).ofStack = (singleton a).pushStack s :=
-  pushStack_snoc_right
+@[simp] theorem ofStack_append_singleton : (append_singleton s a).ofStack = (singleton a).pushStack s :=
+  pushStack_append_singleton_right
 
 @[simp] theorem ofStack_cons : (cons a s).ofStack = s.ofStack.push a :=
   pushStack_cons_right
@@ -1868,9 +1656,9 @@ section OfStack
 
 @[simp] theorem ofStack_append : (s.append t).ofStack = t.ofStack.pushStack s := pushStack_append
 
-theorem IsSMH.ofStack : s.IsSMH → s.ofStack.IsSMH := IsSMH.pushStack IsSMH_nil
+theorem IsSMH.ofStack : IsSMH s → s.ofStack.IsSMH := IsSMH.pushStack IsSMH_nil
 
-theorem IsPerfect.ofStack : s.IsPerfect → s.ofStack.IsPerfect := IsPerfect.pushStack IsPerfect_nil
+theorem IsPerfect.ofStack : IsPerfect s → s.ofStack.IsPerfect := IsPerfect.pushStack IsPerfect_nil
 
 theorem ofStack_length_le : s.ofStack.length ≤ s.length := by
   induction s
@@ -1899,7 +1687,7 @@ theorem ofStack_eq_of_ofStack_length_eq (hs : s.ofStack.length = s.length) : s.o
 
 end OfStack
 
-def pushLeaf (s : BTreeStack α) (x : α) : BTreeStack α := s.push (leaf x)
+def pushLeaf (s : BTStack α) (x : α) : BTStack α := s.push (leaf x)
 
 section PushLeaf
 
@@ -1939,14 +1727,14 @@ theorem pushLeaf_pushLeaf_of_one_le_firstHeight (hbs : 1 ≤ s.firstHeight) :
     rw [pushLeaf_cons_leaf]
     exact height_le_firstHeight_push.trans_eq' rfl
 
-theorem IsSMH.pushLeaf (hsh : s.IsSMH) : (s.pushLeaf x).IsSMH := hsh.push_of
+theorem IsSMH.pushLeaf IsSMH (hsh : IsSMH s) : (s.pushLeaf x) := hsh.push_of
 
-theorem IsPerfect.pushLeaf (hs : s.IsPerfect) : (s.pushLeaf x).IsPerfect :=
+theorem IsPerfect.pushLeaf IsPerfect (hs : IsPerfect s) : (s.pushLeaf x) :=
   hs.push_of_IsPerfect IsPerfect_leaf
 
 end PushLeaf
 
-def pushLeafs (s : BTreeStack α) (xs : List α) : BTreeStack α := xs.foldl pushLeaf s
+def pushLeafs (s : BTStack α) (xs : List α) : BTStack α := xs.foldl pushLeaf s
 
 section PushLeafs
 
@@ -1957,7 +1745,7 @@ variable {x : α} {xs ys : List α}
 @[simp] theorem pushLeafs_cons_right : s.pushLeafs (x :: xs) = (s.pushLeaf x).pushLeafs xs :=
     List.foldl_cons _ _
 
-@[simp] theorem pushLeafs_snoc_right : s.pushLeafs (xs ++ [x]) = (s.pushLeafs xs).pushLeaf x :=
+@[simp] theorem pushLeafs_append_singleton_right : s.pushLeafs (xs ++ [x]) = (s.pushLeafs xs).pushLeaf x :=
     List.foldl_append _ _ _ _
 
 theorem pushLeafs_singleton : s.pushLeafs [x] = s.pushLeaf x := by
@@ -1966,15 +1754,15 @@ theorem pushLeafs_singleton : s.pushLeafs [x] = s.pushLeaf x := by
 @[simp] theorem pushLeafs_append : s.pushLeafs (xs ++ ys) = (s.pushLeafs xs).pushLeafs ys :=
     List.foldl_append _ _ _ _
 
-@[simp] theorem IsSMH.pushLeafs (hsh : s.IsSMH) :
-    (s.pushLeafs xs).IsSMH := by
+@[simp] theorem IsSMH.pushLeafs (hsh : IsSMH s) :
+    IsSMH (s.pushLeafs xs) := by
   induction xs generalizing s with | nil => _ | cons x xs IH => _
   · exact hsh
   · simp_rw [pushLeafs_cons_right]
     exact IH hsh.pushLeaf
 
-@[simp] theorem IsPerfect.pushLeafs (hsh : s.IsPerfect) :
-    (s.pushLeafs xs).IsPerfect := by
+@[simp] theorem IsPerfect.pushLeafs (hsh : IsPerfect s) :
+    IsPerfect (s.pushLeafs xs) := by
   induction xs generalizing s with | nil => _ | cons x xs IH => _
   · exact hsh
   · simp_rw [pushLeafs_cons_right]
@@ -1990,784 +1778,47 @@ theorem pushLeafs_eq_pushStack_ofList_reverse_map_leaf :
 
 end PushLeafs
 
-def ofLeafs (xs : List α) : BTreeStack α := nil.pushLeafs xs
+def ofLeafs (xs : List α) : BTStack α := nil.pushLeafs xs
 
 section OfLeafs
 
-theorem ofLeafs_nil : ofLeafs [] = (nil : BTreeStack α) :=
+theorem ofLeafs_nil : ofLeafs [] = (nil : BTStack α) :=
   pushLeafs_nil_right
 
 theorem ofLeafs_cons : ofLeafs (x :: xs) = (singleton (leaf x)).pushLeafs xs :=
   pushLeafs_cons_right
 
-@[simp] theorem ofLeafs_IsSMH : (ofLeafs xs).IsSMH := IsSMH_nil.pushLeafs
+@[simp] theorem ofLeafs_IsSMH : IsSMH (ofLeafs xs) := IsSMH_nil.pushLeafs
 
-@[simp] theorem ofLeafs_IsPerfect : (ofLeafs xs).IsPerfect := IsPerfect_nil.pushLeafs
+@[simp] theorem ofLeafs_IsPerfect : IsPerfect (ofLeafs xs) := IsPerfect_nil.pushLeafs
 
 end OfLeafs
 
-def ofListVals (bs : List α) : BTreeStack α :=
+def ofListVals (bs : List α) : BTStack α :=
   if hbs : 0 < bs.length then
-  (ofListVals (bs.drop (2^(bs.length.log2)))).snoc
+  (ofListVals (bs.drop (2^(bs.length.log2)))).append_singleton
     ((BTree.ofList (bs.take (2^(bs.length.log2))) (List.ne_nil_of_length_pos
     (List.length_take_pos.mpr ⟨hbs, Nat.two_pow_pos _⟩)))) else nil
 
-def pushLeaf (s : BTreeStack α) (a : α) : BTreeStack α := s.push (leaf a)
+def pushLeaf (s : BTStack α) (a : α) : BTStack α := s.push (leaf a)
 
-def pushListVals (s : BTreeStack α) (bs : List α) : BTreeStack α := bs.foldl pushLeaf s
+def pushListVals (s : BTStack α) (bs : List α) : BTStack α := bs.foldl pushLeaf s
 
 theorem pushList_eq_push : s.pushListVals bs = s.pushStack (ofListVals bs) := sorry
 
 #eval ofListVals [0, 1, 2, 3, 4, 5, 6, 7]
 
 
-def pushTuple (s : BTreeStack α) (bs : Fin k → α) : BTreeStack α :=
+def pushTuple (s : BTStack α) (bs : Fin k → α) : BTStack α :=
     Fin.foldl k (fun p i => p.pushLeaf (bs i)) s
 
-def ofTuple' (bs : Fin k → α) : BTreeStack α := pushTuple nil bs
+def ofTuple' (bs : Fin k → α) : BTStack α := pushTuple nil bs
 
 #eval Nat.bitIndices 7
 
-#eval List.foldr (fun (a : ℕ) (p : BTreeStack ℕ) => p.push (leaf a)) nil [6, 5, 4, 3, 2, 1, 0]
+#eval List.foldr (fun (a : ℕ) (p : BTStack ℕ) => p.push (leaf a)) nil [6, 5, 4, 3, 2, 1, 0]
 
 #eval List.foldl (fun p a => p.push (leaf a)) nil [0, 1, 2, 3, 4, 5, 6]
 
-def sadsdasd (s : BTreeStack α) (bs : List α) : BTreeStack α :=
+def sadsdasd (s : BTStack α) (bs : List α) : BTStack α :=
     (bs.length.bitIndices).foldl (fun s n => _) s
-
-def count (s : BTreeStack α) : ℕ :=
-  s.nilConsInduction 0 (fun a _ m => m + a.count)
-
-/--/
-
-
-
-def push (s : BTreeStack α) :
-    (b : BTree α) → (has : ∀ a ∈ s, b.height ≤ a.height) → BTreeStack α :=
-  s.nilConsInduction (fun b _ => singleton b)
-  (fun a s has push b hbs => if hab : a.height = b.height then
-  push (node a b) (fun _ h => height_node ▸ Nat.succ_le_of_lt (hab ▸ Nat.max_self _ ▸ (has _ h)))
-  else cons b (cons a s has) (fun _ h => (mem_cons.mp h).elim
-    (fun h => h ▸ lt_of_le_of_ne' (hbs _ mem_cons_self) hab)
-    (fun h => (hbs _ mem_cons_self).trans_lt (has _ h))))
-
-end BTreeStack
-
-def PBTree (α : Type u) := Subtype (BTree.IsPerfect (α := α))
-
-namespace PBTree
-
-open BTree
-
-instance [Repr α] : Repr (PBTree α) := instReprSubtype
-instance [DecidableEq α] : DecidableEq (PBTree α) := Subtype.instDecidableEq
-instance [Inhabited α] : Inhabited (PBTree α) := ⟨leaf default, IsPerfect_leaf⟩
-instance [IsEmpty α] : IsEmpty (PBTree α) := instIsEmptySubtype _
-
-instance [Nonempty α] : Infinite (PBTree α) :=
-  Infinite.of_injective (fun (i : ℕ) =>
-    i.recOn (⟨leaf (Classical.arbitrary _), IsPerfect_leaf⟩)
-    (fun _ t => ⟨node t.1 t.1, t.2.double_node⟩))
-    (fun i => i.recOn (fun j => j.recOn (fun _ => rfl)
-    (fun _ _ C => BTree.noConfusion (Subtype.ext_iff_val.mp C)))
-    (fun _ IH j => j.recOn (fun C => BTree.noConfusion (Subtype.ext_iff_val.mp C))
-    fun _ _ H => congrArg _ (IH (Subtype.ext (node.injEq _ _ _ _ ▸ (Subtype.ext_iff_val.mp H)).1))))
-
-variable {a : α} {l r t : PBTree α}
-
-def toBTree (t : PBTree α) := t.1
-
-section ToBTree
-
-@[simp] theorem toBTree_mk : toBTree ⟨bt, ht⟩ = bt := rfl
-
-theorem toBTree_injective : Function.Injective (toBTree (α := α)) := fun _ _ => Subtype.ext
-
-@[simp] theorem toBTree_inj_iff : l.toBTree = r.toBTree ↔ l = r :=
-  ⟨fun h => toBTree_injective h, congrArg _⟩
-
-theorem IsPerfect_toBTree : t.toBTree.IsPerfect := t.2
-
-end ToBTree
-
-def height (t : PBTree α) : ℕ := t.toBTree.height
-
-section Height
-
-@[simp] theorem height_toBTree : t.toBTree.height = t.height := rfl
-
-end Height
-
-def leaf (a : α) : PBTree α := ⟨BTree.leaf a, IsPerfect_leaf⟩
-
-section Leaf
-
-@[simp] theorem leaf_default_eq_default [Inhabited α] : leaf (default : α) = default := rfl
-
-theorem leaf_injective : Function.Injective (leaf (α := α)) := fun _ _ H => by
-  rw [← leaf.injEq]
-  exact Subtype.mk_eq_mk.mp H
-
-theorem leaf_inj_iff : leaf a = leaf b ↔ a = b :=
-  ⟨fun h => leaf_injective h, congrArg _⟩
-
-@[simp] theorem height_leaf : height (leaf a) = 0 := rfl
-
-end Leaf
-
-def node (l r : PBTree α) (hlr : l.height = r.height) : PBTree α :=
-  ⟨BTree.node l.toBTree r.toBTree,
-  IsPerfect_node_of_IsPerfect_of_IsPerfect_of_heights_eq
-  l.IsPerfect_toBTree r.IsPerfect_toBTree hlr rfl⟩
-
-section Node
-
-variable {hlr : l.height = r.height}
-
-theorem node_inj_iff : node l r hlr = node l' r' hlr' ↔ ((l = l') ∧ r = r') := by
-  refine ⟨fun h => ?_, fun h => ?_⟩
-  · unfold node at h
-    have H := Subtype.mk_eq_mk.mp h
-    simp_rw [node.injEq, toBTree_inj_iff] at H
-    exact H
-  · simp_rw [h.1, h.2]
-
-theorem height_node_of_heights_eq (hl : l.height = n) (hr : r.height = n) :
-    height (node l r (hl.trans hr.symm)) = n + 1 :=
-  BTree.height_node_of_heights_eq hl hr
-
-theorem height_node_right : height (node l r hlr) = r.height + 1 :=
-  height_node_of_heights_eq hlr rfl
-
-theorem height_node_left : height (node l r hlr) = l.height + 1 :=
-  height_node_of_heights_eq rfl hlr.symm
-
-theorem height_node_eq_succ_iff_height_left_eq :
-    (node l r hlr).height = n + 1 ↔ l.height = n := by
-  simp_rw [height_node_left, add_left_inj]
-
-theorem height_node_eq_succ_iff_height_right_eq :
-    (node l r hlr).height = n + 1 ↔ r.height = n := by
-  simp_rw [height_node_right, add_left_inj]
-
-theorem left_height_lt : l.height < (node l r hlr).height := by
-  simp_rw [height_node_left, Nat.lt_succ_self]
-
-theorem right_height_lt : r.height < (node l r hlr).height := by
-  simp_rw [height_node_right, Nat.lt_succ_self]
-
-instance : NeZero (node l r hlr).height := ⟨Nat.noConfusion⟩
-
-end Node
-
-section LeafNode
-
-variable {hlr : l.height = r.height}
-
-@[simp] theorem node_ne_leaf : node l r hlr ≠ leaf a := Subtype.coe_ne_coe.mp BTree.noConfusion
-
-@[simp] theorem leaf_ne_node : leaf a ≠ node l r hlr := Subtype.coe_ne_coe.mp BTree.noConfusion
-
-@[elab_as_elim] def leafNodeInduction {motive : PBTree α → Sort _}
-    (leaf : (a : α) → motive (leaf a))
-    (node : (l r : PBTree α) → (hlr : l.height = r.height) → motive l → motive r →
-      motive (node l r hlr)) (t : PBTree α) : motive t :=
-  match t with
-  | ⟨BTree.leaf a, _⟩ => leaf a
-  | ⟨BTree.node l r, hlr⟩ =>
-    node ⟨l, hlr.left⟩ ⟨r, hlr.right⟩ hlr.height_eq_height
-    (leafNodeInduction leaf node ⟨l, _⟩)
-    (leafNodeInduction leaf node ⟨r, _⟩)
-  termination_by t.height
-  decreasing_by exacts [BTree.left_height_lt, BTree.right_height_lt]
-
-theorem leafNodeInduction_leaf {motive : PBTree α → Sort _}
-    {leaf : (a : α) → motive (leaf a)}
-    {node : (l r : PBTree α) → (hlr : l.height = r.height) → motive l → motive r →
-      motive (node l r hlr)} :
-      leafNodeInduction leaf node (PBTree.leaf a) = leaf a := by
-  unfold leafNodeInduction
-  rfl
-
-theorem leafNodeInduction_node {motive : PBTree α → Sort _}
-    {leaf : (a : α) → motive (leaf a)}
-    {node : (l r : PBTree α) → (hlr : l.height = r.height) → motive l → motive r →
-      motive (node l r hlr)} :
-      leafNodeInduction leaf node (PBTree.node l r hlr) =
-      node l r hlr (leafNodeInduction leaf node l) (leafNodeInduction leaf node r) := by
-  conv =>
-    lhs
-    unfold PBTree.node leafNodeInduction
-  rfl
-
-@[elab_as_elim] def leafNodeCases {motive : PBTree α → Sort _}
-    (leaf : (a : α) → motive (leaf a))
-    (node : (l r : PBTree α) → (hlr : l.height = r.height) → motive (node l r hlr))
-    (t : PBTree α) : motive t := leafNodeInduction leaf (fun l r hlr _ _ => node l r hlr) t
-
-theorem leafNodeCases_leaf {motive : PBTree α → Sort _}
-    {leaf : (a : α) → motive (leaf a)}
-    {node : (l r : PBTree α) → (hlr : l.height = r.height) → motive (node l r hlr)} :
-    leafNodeCases leaf node (PBTree.leaf a) = leaf a := leafNodeInduction_leaf
-
-theorem leafNodeCases_node {motive : PBTree α → Sort _}
-    {leaf : (a : α) → motive (leaf a)}
-    {node : (l r : PBTree α) → (hlr : l.height = r.height) → motive (node l r hlr)} :
-    leafNodeCases leaf node (PBTree.node l r hlr) = node l r hlr := leafNodeInduction_node
-
-theorem exists_leaf_or_exists_node (t : PBTree α) :
-    (∃ a, t = leaf a) ∨ (∃ l r hlr, t = node l r hlr) := by
-  cases t using leafNodeCases
-  · exact Or.inl ⟨_, rfl⟩
-  · exact Or.inr ⟨_, _, _, rfl⟩
-
-theorem exists_of_height_eq_zero (ht : t.height = 0) : ∃ a, t = leaf a := by
-  cases t using leafNodeCases
-  · exact ⟨_, rfl⟩
-  · exact (NeZero.ne _ ht).elim
-
-theorem exists_of_height_ne_zero (ht : t.height ≠ 0) : ∃ l r hlr, t = node l r hlr := by
-  cases t using leafNodeCases
-  · exact (ht rfl).elim
-  · exact ⟨_, _, _, rfl⟩
-
-theorem exists_of_height_eq_succ (ht : t.height = n + 1) :
-    ∃ (l r : PBTree α) (hl : l.height = n) (hr : r.height = n),
-    t = node l r (hl.trans hr.symm) := by
-  cases t using leafNodeCases
-  · exact Nat.noConfusion ht
-  · have hl := height_node_eq_succ_iff_height_left_eq.mp ht
-    have hr := height_node_eq_succ_iff_height_right_eq.mp ht
-    exact ⟨_, _, hl, hr, rfl⟩
-
-end LeafNode
-
-instance : Preorder (PBTree α) := Subtype.preorder _
-
-@[simp] theorem lt_iff_height_lt_height : l < r ↔ l.height < r.height := Iff.rfl
-@[simp] theorem le_iff_height_le_height : l ≤ r ↔ l.height ≤ r.height := Iff.rfl
-
-instance [Subsingleton α] : PartialOrder (PBTree α) where
-  le_antisymm l r hlr hrl := by
-    rw [le_iff_height_le_height] at hlr hrl
-    have h := le_antisymm hlr hrl
-    clear hlr hrl
-    induction l using leafNodeInduction generalizing r with
-      | leaf => _ | node _ _ _ IHL IHR => _
-    · cases r using leafNodeCases
-      · simp_rw [leaf_inj_iff]
-        exact Subsingleton.elim _ _
-      · simp_rw [height_node_right, height_leaf, (Nat.succ_ne_zero _).symm] at h
-    · cases r using leafNodeCases
-      · simp_rw [height_node_right, height_leaf, (Nat.succ_ne_zero _)] at h
-      · simp_rw [node_inj_iff]
-        simp_rw [height_node_right, add_left_inj] at h
-        refine ⟨IHL _ ?_, IHR _ (by assumption)⟩
-        omega
-
-theorem not_IsPartialOrder [Nontrivial α] : ¬ IsPartialOrder (PBTree α) (· ≤ ·) := fun h => by
-  rcases Nontrivial.exists_pair_ne (α := α) with ⟨x, y, hxy⟩
-  have H := h.antisymm (leaf x) (leaf y) (le_refl 0) (le_refl 0)
-  rw [leaf_inj_iff] at H
-  contradiction
-
-def count (t : PBTree α) := 2^t.height
-
-section Count
-
-theorem count_eq_two_pow_height : t.count = 2^t.height := rfl
-
-@[simp] theorem count_toBTree : t.toBTree.count = t.count :=
-  count_eq_two_pow_height_of_IsPerfect IsPerfect_toBTree
-
-end Count
-
-def ofTupleAux : {n : ℕ} → (Fin (2^n) → α) → {t : PBTree α // t.height = n}
-  | 0, bs => ⟨leaf (bs 0), rfl⟩
-  | (_ + 1), bs =>
-    let (l, r) := Fin.twoPowSuccTupleDivide bs
-    ⟨_, height_node_of_heights_eq (ofTupleAux l).prop (ofTupleAux r).prop⟩
-
-def ofTuple (bs : Fin (2^n) → α) : PBTree α := (ofTupleAux bs).1
-
-section OfTuple
-
-variable {bs : Fin (2^n) → α}
-
-open Fin
-
-@[simp] theorem height_ofTuple : (ofTuple bs).height = n := (ofTupleAux bs).2
-
-@[simp] theorem count_ofTuple : (ofTuple bs).count = 2^n := by
-  rw [count_eq_two_pow_height, height_ofTuple]
-
-@[simp] theorem ofTuple_zero (bs : Fin (2^0) → α) :
-    ofTuple bs = leaf (bs 0) := rfl
-
-@[simp] theorem ofTuple_succ (bs : Fin (2^(n + 1)) → α) :
-  ofTuple bs =
-  (node (ofTuple (Fin.twoPowSuccTupleDivide bs).1) (ofTuple (Fin.twoPowSuccTupleDivide bs).2))
-  (height_ofTuple.trans height_ofTuple.symm) := rfl
-
-end OfTuple
-
-def toTuple (t : PBTree α) : {n : ℕ} → t.height = n → (Fin (2^n) → α)
-  | 0 => t.leafNodeCases (fun a _ _ => a) (fun _ _ _ => Nat.noConfusion)
-  | (_ + 1) => t.leafNodeCases (fun _ => Nat.noConfusion ) (fun l r hlr hn =>
-    (Fin.twoPowSuccTupleDivide.symm (l.toTuple
-    (height_left_eq_of_node_eq_succ_of_height_eq_height hn hlr),
-    r.toTuple (height_right_eq_of_node_eq_succ_of_height_eq_height hn hlr))))
-
-section ToTuple
-
-@[simp] theorem toTuple_leaf : toTuple (leaf a) (height_leaf) = fun _ => a := by
-  unfold toTuple
-  rw [leafNodeCases_leaf]
-
-@[simp] theorem toTuple_node (hl : l.height = n) (hr : r.height = n) :
-    toTuple (node l r (hl.trans hr.symm)) (height_node_of_heights_eq hl hr) =
-    Fin.twoPowSuccTupleDivide.symm (l.toTuple hl, r.toTuple hr) := by
-  conv =>
-    lhs
-    unfold toTuple
-    rw [leafNodeCases_node]
-
-end ToTuple
-
-theorem toTuple_ofTuple_eq_comp_cast {bs: Fin (2^n) → α} (h : m = n)
-    (hh := (height_ofTuple (n := n)).trans h.symm) (hmn := congrArg (fun x => 2^x) h) :
-    toTuple (ofTuple bs) hh = bs ∘ Fin.cast hmn := by
-  cases h
-  induction n with | zero => _ | succ _ IH => _
-  · simp_rw [ofTuple_zero, toTuple_leaf]
-    exact funext fun _ => congrArg _ (Fin.fin_one_eq_zero _).symm
-  · simp_rw [ofTuple_succ, toTuple_node height_ofTuple height_ofTuple,
-      IH, Equiv.symm_apply_eq]
-    simp_rw [Fin.twoPowSuccTupleDivide_apply, Prod.ext_iff, funext_iff,  Function.comp_apply,
-      Fin.fstTwoPowSuccTuple_apply, Fin.sndTwoPowSuccTuple_apply, Function.comp_apply,
-      Fin.cast_eq_self, implies_true, and_self]
-
-@[simp] theorem toTuple_ofTuple {bs: Fin (2^n) → α} : toTuple (ofTuple bs) height_ofTuple = bs :=
-  toTuple_ofTuple_eq_comp_cast rfl
-
-@[simp] theorem toTuple_ofTuple_height_ofTuple_eq_comp_cast {bs: Fin (2^n) → α}
-    (hmn := congrArg (fun x => 2^x) height_ofTuple) :
-    toTuple (ofTuple bs) rfl = bs ∘ Fin.cast hmn := toTuple_ofTuple_eq_comp_cast height_ofTuple
-
-@[simp] theorem ofTuple_toTuple (ht : t.height = n) : ofTuple (toTuple t ht) = t := by
-  induction n generalizing t with | zero => _ | succ n IH => _
-  · rcases exists_of_height_eq_zero ht with ⟨a, rfl⟩
-    simp_rw [toTuple_leaf, ofTuple_zero]
-  · rcases exists_of_height_eq_succ ht with ⟨l, r, hl, hr, rfl⟩
-    simp_rw [ofTuple_succ, toTuple_node hl hr, Equiv.apply_symm_apply, node_inj_iff]
-    exact ⟨IH hl, IH hr⟩
-
-@[simps!]
-def equivTupleOfHeightEq : {t : PBTree α // t.height = n} ≃ (Fin (2^n) → α) where
-  toFun t := toTuple t.1 t.2
-  invFun bs := ⟨ofTuple bs, height_ofTuple⟩
-  left_inv _ := Subtype.ext <| ofTuple_toTuple _
-  right_inv _ := toTuple_ofTuple
-
-def equivSigmaTuple : PBTree α ≃ (Σ n, (Fin (2^n) → α)) where
-  toFun t := ⟨t.height, toTuple t rfl⟩
-  invFun bs := ofTuple bs.2
-  left_inv t := ofTuple_toTuple _
-  right_inv := fun bs => by
-    simp_rw [Fin.sigma_eq_iff_eq_comp_cast']
-    exact ⟨height_ofTuple, toTuple_ofTuple_height_ofTuple_eq_comp_cast⟩
-
-end PBTree
-
-def PBTreeStack (α : Type u) := {l : List (PBTree α) // l.Sorted (· < ·)}
-
-namespace PBTreeStack
-
-open PBTree
-
-variable {l r a : PBTree α} {s t : PBTreeStack α}
-
-instance [Repr α] : Repr (PBTreeStack α) := instReprSubtype
-instance [DecidableEq α] : DecidableEq (PBTreeStack α) := Subtype.instDecidableEq
-instance [Inhabited α] : Inhabited (PBTreeStack α) := ⟨[], List.sorted_nil⟩
-
-def toListPBTree (l : PBTreeStack α) := l.1
-
-section ToListPBTree
-
-@[simp] theorem toListPBTree_mk : toListPBTree ⟨ts, hts⟩ = ts := rfl
-
-theorem toListPBTree_injective : Function.Injective (toListPBTree (α := α)) :=
-    fun _ _ => Subtype.ext
-
-@[simp] theorem toListPBTree_inj_iff : s.toListPBTree = t.toListPBTree ↔ s = t :=
-  ⟨fun h => toListPBTree_injective h, congrArg _⟩
-
-theorem IsSorted_toListPBTree : s.toListPBTree.Sorted (· < ·) := s.2
-
-theorem of_toListPBTree_eq_cons (h : s.toListPBTree = a :: ts) : ts.Sorted (· < ·) :=
-  List.Sorted.of_cons (h ▸ IsSorted_toListPBTree)
-
-theorem rel_of_toListPBTree_eq_cons (h : s.toListPBTree = a :: ts) : ∀ b ∈ ts, a < b :=
-  List.rel_of_sorted_cons (h ▸ IsSorted_toListPBTree)
-
-end ToListPBTree
-
-instance : Membership (PBTree α) (PBTreeStack α) where
-  mem l a := a ∈ l.toListPBTree
-
-section Mem
-
-@[simp] theorem mem_toListPBTree_iff : a ∈ s.toListPBTree ↔ a ∈ s := Iff.rfl
-
-end Mem
-
-def length (s : PBTreeStack α) : ℕ := s.toListPBTree.length
-
-section Length
-
-@[simp] theorem length_toListPBTree : s.toListPBTree.length = s.length := rfl
-
-end Length
-
-def nil : PBTreeStack α := ⟨[], List.sorted_nil⟩
-
-section Nil
-
-theorem toListPBTree_nil : (nil : PBTreeStack α).toListPBTree = [] := rfl
-
-theorem toListPBTree_eq_nil_iff : s.toListPBTree = [] ↔ s = nil := by
-  rw [← toListPBTree_nil, toListPBTree_inj_iff]
-
-@[simp] theorem not_mem_nil (t : PBTree α) : ¬ t ∈ nil := List.not_mem_nil _
-
-@[simp] theorem length_nil : length (nil : PBTreeStack α) = 0 := rfl
-
-@[simp] theorem length_eq_zero : s.length = 0 ↔ s = nil := by
-  rw [← length_toListPBTree, List.length_eq_zero, toListPBTree_eq_nil_iff]
-
-end Nil
-
-def cons (a : PBTree α) (s : PBTreeStack α) (has : ∀ b ∈ s, a < b) : PBTreeStack α :=
-  ⟨a :: s.toListPBTree, List.sorted_cons.mpr ⟨has, s.isSorted_toListPBTree⟩⟩
-
-section Cons
-
-variable {has : ∀ b ∈ s, a < b}
-
-@[simp] theorem cons_inj_iff : cons a s has = cons a' s' has' ↔ ((a = a') ∧ s = s') := by
-  refine ⟨fun h => ?_, fun h => ?_⟩
-  · unfold cons at h
-    have H := Subtype.mk_eq_mk.mp h
-    simp_rw [List.cons.injEq, toListPBTree_inj_iff] at H
-    exact H
-  · simp_rw [h.1, h.2]
-
-@[simp] theorem toListPBTree_cons : (cons a s has).toListPBTree = a :: s.toListPBTree := rfl
-
-@[simp] theorem length_cons : (cons a s has).length = s.length + 1 := rfl
-
-instance : NeZero ((cons a s has).length) := ⟨Nat.succ_ne_zero _⟩
-
-theorem length_ne_zero : s.length ≠ 0 ↔ s ≠ nil := length_eq_zero.not
-
-theorem length_pos : 0 < s.length ↔ s ≠ nil := Nat.pos_iff_ne_zero.trans length_ne_zero
-
-theorem one_le_length : 1 ≤ s.length ↔ s ≠ nil := length_pos
-
-@[simp] theorem mem_cons : b ∈ cons a s has ↔ b = a ∨ b ∈ s := List.mem_cons
-
-theorem mem_cons_self : a ∈ cons a s has := List.mem_cons_self _ _
-
-end Cons
-
-section NilCons
-
-variable {has : ∀ b ∈ s, a < b}
-
-@[simp] theorem nil_ne_cons : nil ≠ cons a s has := Subtype.coe_ne_coe.mp List.noConfusion
-
-@[simp] theorem cons_ne_nil : cons a s has ≠ nil := Subtype.coe_ne_coe.mp List.noConfusion
-
-@[elab_as_elim] def nilConsInduction {motive : PBTreeStack α → Sort _}
-    (nil : motive nil)
-    (cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a < b) →
-     motive s → motive (cons a s has)) (t : PBTreeStack α) : motive t :=
-  match t with
-  | ⟨[], _⟩ => nil
-  | ⟨a :: s, has⟩ =>
-    cons a ⟨s, has.of_cons⟩ (List.rel_of_sorted_cons has) (nilConsInduction nil cons _)
-  termination_by t.length
-  decreasing_by exact Nat.lt_succ_self _
-
-theorem nilConsInduction_nil {motive : PBTreeStack α → Sort _}
-    {nil : motive nil}
-    {cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a < b) →
-     motive s → motive (cons a s has)} :
-      nilConsInduction nil cons PBTreeStack.nil = nil := by
-  unfold nilConsInduction
-  rfl
-
-theorem nilConsInduction_cons {motive : PBTreeStack α → Sort _}
-    {nil : motive nil}
-    {cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a < b) →
-     motive s → motive (cons a s has)} :
-      nilConsInduction nil cons (PBTreeStack.cons a s has) =
-      cons a s has (nilConsInduction nil cons s) := by
-  conv =>
-    lhs
-    unfold PBTree.node nilConsInduction
-  rfl
-
-@[elab_as_elim] def nilConsCases {motive : PBTreeStack α → Sort _}
-    (nil : motive nil)
-    (cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a < b) →
-     motive (cons a s has)) (t : PBTreeStack α) : motive t :=
-     nilConsInduction nil (fun a s has _ => cons a s has) t
-
-theorem nilConsCases_nil {motive : PBTreeStack α → Sort _}
-    {nil : motive nil}
-    {cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a < b) →
-     motive (cons a s has)} :
-      nilConsCases nil cons PBTreeStack.nil = nil := nilConsInduction_nil
-
-theorem nilConsCases_cons {motive : PBTreeStack α → Sort _}
-    {nil : motive nil}
-    {cons : (a : PBTree α) → (s : PBTreeStack α) → (has : ∀ b ∈ s, a < b) →
-     motive (cons a s has)} :
-      nilConsCases nil cons (PBTreeStack.cons a s has) =
-      cons a s has := nilConsInduction_cons
-
-theorem nil_or_exists_cons (t : PBTreeStack α) :
-    t = nil ∨ (∃ a s has, t = cons a s has) := by
-  cases t using nilConsCases
-  · exact Or.inl rfl
-  · exact Or.inr ⟨_, _, _, rfl⟩
-
-theorem exists_of_length_ne_zero (ht : t.length ≠ 0) : ∃ a s has, t = cons a s has := by
-  cases t using nilConsCases
-  · exact (ht rfl).elim
-  · exact ⟨_, _, _, rfl⟩
-
-end NilCons
-
-def singleton (a : PBTree α) : PBTreeStack α := cons a nil (fun _ H => (not_mem_nil _ H).elim)
-
-section Singleton
-
-@[simp] theorem cons_eq_singleton_iff :
-  cons a s has = singleton b ↔ a = b ∧ s = nil := cons_inj_iff
-
-theorem length_singleton : (singleton a).length = 1 := rfl
-
-@[simp] theorem nil_ne_singleton : nil ≠ singleton a := nil_ne_cons
-
-@[simp] theorem singleton_ne_nil : singleton a ≠ nil := cons_ne_nil
-
-theorem length_eq_one : s.length = 1 ↔ ∃ a, s = singleton a := by
-  cases s using nilConsCases
-  · simp_rw [length_nil, zero_ne_one, nil_ne_singleton, exists_false]
-  · simp_rw [length_cons, add_left_eq_self, length_eq_zero, cons_eq_singleton_iff,
-    exists_and_right, exists_eq', true_and]
-
-theorem eq_of_mem_singleton : b ∈ singleton a → b = a := List.eq_of_mem_singleton
-
-@[simp] theorem mem_singleton : b ∈ singleton a ↔ b = a := List.mem_singleton
-
-@[simp] theorem mem_singleton_self (a : PBTree α) : a ∈ singleton a := List.mem_singleton_self a
-
-end Singleton
-
-def height (s : PBTreeStack α) : ℕ := s.nilConsCases default (fun a _ _ => a.height)
-
-section Height
-
-theorem height_nil : (nil : PBTreeStack α).height = default := nilConsCases_nil
-
-@[simp] theorem height_cons : (cons a s has).height = a.height := nilConsCases_cons
-
-theorem height_le : ∀ a ∈ s, s.height ≤ a.height := by
-  cases s using nilConsCases with | nil => _ | cons a s has => _
-  · simp_rw [not_mem_nil, false_implies, implies_true]
-  · simp_rw [mem_cons, height_cons, forall_eq_or_imp, le_refl, true_and]
-    exact fun _ hs => (has _ hs).le
-
-end Height
-
-def size (s : PBTreeStack α) : ℕ :=
-  s.nilConsCases 0 (fun a s _ => s.nilConsInduction (a.height + 1) (fun _ _ _ => id))
-
-def count (s : PBTreeStack α) : ℕ :=
-  s.nilConsInduction 0 (fun a _ _ m => m + a.count)
-
-def push (s : PBTreeStack α) :
-    (b : PBTree α) → (has : ∀ a ∈ s, b.height ≤ a.height) → PBTreeStack α :=
-  s.nilConsInduction (fun b _ => singleton b)
-  (fun a s has push b hbs => if hab : a.height = b.height then
-  push (node a b hab) (fun _ h => height_node_left ▸ Nat.succ_le_of_lt (has _ h)) else
-  cons b (cons a s has) (fun _ h => (mem_cons.mp h).elim
-    (fun h => h ▸ lt_of_le_of_ne' (hbs _ mem_cons_self) hab)
-    (fun h => (hbs _ mem_cons_self).trans_lt (has _ h))))
-
-def pushLeaf (s : PBTreeStack α) (a : α) : PBTreeStack α := s.push (leaf a) (fun _ _ => zero_le _)
-
-def pushTuple (s : PBTreeStack α) (bs : Fin k → α) : PBTreeStack α :=
-    Fin.foldl k (fun p i => p.pushLeaf (bs i)) s
-
-def ofTuple (bs : Fin k → α) : PBTreeStack α := pushTuple nil bs
-
-
-theorem ofTuple_twoPowTuple' (bs : Fin (2^n) → α) (hs : n ≤ s.height) :
-    s.pushTuple bs = s.push (PBTree.ofTuple bs)
-    (height_ofTuple ▸ fun _ hs' => hs.trans (height_le _ hs')) := sorry
-
-
-theorem ofTuple_twoPowTuple (bs : Fin (2^n) → α) :
-    ofTuple bs = singleton (PBTree.ofTuple bs) := by
-  induction n
-  · unfold ofTuple pushTuple pushLeaf push
-    simp_rw [Nat.pow_zero, Fin.foldl_succ, Fin.foldl_zero, nilConsInduction_nil, ofTuple_zero]
-  · simp_rw [ofTuple_succ]
-    sorry
-
-end PBTreeStack
-
-/-
-def reduceList : List (PBTree α) → List (PBTree α)
-  | [] => []
-  | t :: [] => t :: []
-  | l :: r :: ts =>
-    if h : l.height = r.height then reduceList (node l r h :: ts)
-    else reduceList (l :: reduceList (r :: ts))
-    termination_by t => t.length
-    decreasing_by
-      simp
-      simp
-      simp
-
-section ReduceList
-
-variable {ts : List (PBTree α)}
-
-@[simp] theorem reduceList_nil : reduceList ([] : List (PBTree α)) = [] := by
-  unfold reduceList
-  rfl
-
-@[simp] theorem reduceList_singleton : reduceList ([t]) = [t] := by
-  unfold reduceList
-  rfl
-
-theorem reduceList_front : reduceList (l :: r :: ts) =
-  if h : l.height = r.height then reduceList (node l r h :: ts)
-    else l :: reduceList (r :: ts) := by
-  conv =>
-    lhs
-    unfold reduceList
-
-theorem reduceList_front_of_height_eq_height (hlr : l.height = r.height) :
-    reduceList (l :: r :: ts) = reduceList (node l r hlr :: ts) := by
-  simp_rw [reduceList_front, dif_pos hlr]
-
-theorem reduceList_front_of_heights_eq (hl : l.height = n) (hr : r.height = n) :
-    reduceList (l :: r :: ts) = reduceList (node l r (hl.trans hr.symm) :: ts) :=
-  reduceList_front_of_height_eq_height _
-
-theorem reduceList_front_of_height_ne_height (hlr : l.height ≠ r.height) :
-    reduceList (l :: r :: ts) = l :: reduceList (r :: ts) := by
-  simp_rw [reduceList_front, dif_neg hlr]
-
-theorem reduceList_cons_of_tail_eq_nil (hts : ts = []) :
-    reduceList (t :: ts) = [t] := by
-  rw [hts, reduceList_singleton]
-
-theorem reduceList_cons_of_tail_ne_nil_of_eq_head_height (hts : ts ≠ [])
-    (htts : t.height = (ts.head hts).height) :
-    reduceList (t :: ts) = reduceList (t.node (ts.head hts) htts :: ts.tail) := by
-  rcases List.exists_cons_of_ne_nil hts with ⟨t', ts, rfl⟩
-  simp_rw [List.head_cons, List.tail_cons,
-    reduceList_front_of_height_eq_height (List.head_cons ▸ htts)]
-
-theorem reduceList_cons_of_tail_ne_nil_of_ne_head_height (hts : ts ≠ [])
-    (htts : t.height ≠ (ts.head hts).height) : reduceList (t :: ts) = t :: reduceList ts := by
-  rcases List.exists_cons_of_ne_nil hts with ⟨t', ts, rfl⟩
-  simp_rw [List.head_cons] at htts
-  rw [reduceList_front_of_height_ne_height htts]
-
-theorem reduceList_cons : reduceList (t :: ts) =
-    if hts : ts = [] then [t] else if
-    htts : t.height = (ts.head hts).height then
-    reduceList (t.node (ts.head hts) htts :: ts.tail) else
-    t :: reduceList ts := by
-  split_ifs
-  · exact reduceList_cons_of_tail_eq_nil (by assumption)
-  · exact reduceList_cons_of_tail_ne_nil_of_eq_head_height (by assumption) (by assumption)
-  · exact reduceList_cons_of_tail_ne_nil_of_ne_head_height (by assumption) (by assumption)
-
-theorem reduceList_length_le : (reduceList ts).length ≤ ts.length := by
-  generalize hts : ts.length = n ; revert hts
-  induction n generalizing ts with | zero => _ | succ n IH => _
-  · simp_rw [nonpos_iff_eq_zero, List.length_eq_zero]
-    rintro rfl ; exact reduceList_nil
-  · cases ts with | nil => _ | cons l ts => _
-    · simp_rw [reduceList_nil, List.length_nil, (Nat.succ_ne_zero _).symm, false_implies]
-    · cases ts with | nil => _ | cons r ts => _
-      · simp_rw [reduceList_singleton, List.length_cons, Nat.add_left_inj]
-        rintro rfl ; exact le_rfl
-      · intro hts
-        simp_rw [List.length_cons, Nat.add_left_inj] at hts
-        by_cases hlr : l.height = r.height
-        · simp_rw [reduceList_front_of_height_eq_height hlr]
-          exact (IH (List.length_cons _ _ ▸ hts)).trans (Nat.lt_succ_self _).le
-        · simp_rw [reduceList_front_of_height_ne_height hlr]
-          exact Nat.succ_le_succ (IH hts)
-
-theorem reduceList_eq_nil_iff : reduceList ts = [] ↔ ts = [] := by
-  generalize hts : ts.length = n ; revert hts
-  induction n generalizing ts with | zero => _ | succ n IH => _
-  · simp_rw [List.length_eq_zero]
-    rintro rfl ; simp_rw [reduceList_nil]
-  · cases ts with | nil => _ | cons l ts => _
-    · simp_rw [reduceList_nil, implies_true]
-    · cases ts with | nil => _ | cons r ts => _
-      · simp_rw [reduceList_singleton, implies_true]
-      · intro hts
-        simp_rw [List.length_cons, add_left_inj] at hts
-        by_cases hlr : l.height = r.height
-        · simp_rw [reduceList_front_of_height_eq_height hlr, IH (List.length_cons _ _ ▸ hts),
-            List.cons_ne_nil]
-        · simp_rw [reduceList_front_of_height_ne_height hlr, List.cons_ne_nil]
-
-theorem reduceList_reduceList : reduceList (reduceList ts) = reduceList ts := by
-  generalize hts : ts.length = n ; revert hts
-  induction n generalizing ts with | zero => _ | succ n IH => _
-  · simp_rw [List.length_eq_zero]
-    rintro rfl ; simp_rw [reduceList_nil]
-  · cases ts with | nil => _ | cons l ts => _
-    · simp_rw [reduceList_nil, implies_true]
-    · cases ts with | nil => _ | cons r ts => _
-      · simp_rw [reduceList_singleton, implies_true]
-      · intro hts
-        simp_rw [List.length_cons, add_left_inj] at hts
-        by_cases hlr : l.height = r.height
-        · simp_rw [reduceList_front_of_height_eq_height hlr, IH (List.length_cons _ _ ▸ hts)]
-        · simp_rw [reduceList_front_of_height_ne_height hlr]
-          rw [reduceList_cons]
-          cases ts with | nil => _ | cons r' ts => _
-          · simp only [reduceList_singleton, reduceList_front_of_height_ne_height hlr]
-          · by_cases hrr' : r.height = r'.height
-            · simp_rw [reduceList_front_of_height_eq_height hrr']
-
-theorem reduceList_reduceList :
-    {ts : List (PBTree α)} → reduceList (reduceList ts) = reduceList ts
-  | [] => by simp_rw [reduceList_nil]
-  | [t] => by simp_rw [reduceList_singleton]
-  | l :: r :: ts => by
-    by_cases hlr : l.height = r.height
-    · simp_rw [reduceList_front_of_height_eq_height hlr, reduceList_reduceList]
-    · simp_rw [reduceList_front_of_height_ne_height hlr]
-      cases H : reduceList (r :: ts) with | nil => _ | cons => _
-      · simp_rw [reduceList_singleton]
-      ·
-
-end ReduceList
--/

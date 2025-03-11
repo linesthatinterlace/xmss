@@ -202,8 +202,8 @@ theorem size_two_mul_add_one : (2*n + 1).size = n.size + 1:= by
 
 theorem size_div_two_succ [NeZero n] : (n / 2).size + 1 = n.size := by
   rcases even_or_odd n with h | h
-  · have : NeZero (n / 2) := ⟨(Nat.div_ne_zero_iff zero_lt_two.ne').mpr <|
-      (NeZero.one_le).lt_of_ne (fun C => (not_even_one (C ▸ h)).elim)⟩
+  · have : NeZero (n / 2) := ⟨Nat.div_ne_zero_iff.mpr <|
+      ⟨zero_lt_two.ne', (NeZero.one_le).lt_of_ne (fun C => (not_even_one (C ▸ h)).elim)⟩⟩
     rw [← size_two_mul, two_mul_div_two_of_even h]
   · rw [← size_two_mul_add_one, two_mul_div_two_add_one_of_odd h]
 

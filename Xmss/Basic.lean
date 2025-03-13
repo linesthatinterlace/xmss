@@ -882,6 +882,7 @@ def divTwo (s :  BTStack α) : BTStack α := (divModTwo s).2
 @[simp] theorem modTwo_singleton : modTwo [a] = a := rfl
 @[simp] theorem modTwo_cons_cons : modTwo (l :: r :: s) = modTwo s := rfl
 
+
 theorem modTwo_eq_none_iff : modTwo s = none ↔ s.length % 2 = 0 := by
   generalize hs : s.length = n
   revert s
@@ -896,6 +897,7 @@ theorem modTwo_eq_none_iff : modTwo s = none ↔ s.length % 2 = 0 := by
     · simp_rw [modTwo_cons_cons, List.length_cons,
         IH s.length ((Nat.lt_succ_self _).trans (Nat.lt_succ_self _)) rfl, add_assoc,
         one_add_one_eq_two, Nat.add_mod_right]
+
 
 theorem modTwo_eq_some_iff : modTwo s = some a ↔ s.length % 2 = 1 ∧ s.getLast? = some a := by
   generalize hs : s.length = n
@@ -916,6 +918,19 @@ theorem modTwo_eq_some_iff : modTwo s = some a ↔ s.length % 2 = 1 ∧ s.getLas
       · simp_rw [IH ((a :: s).length) ((Nat.lt_succ_self _).trans (Nat.lt_succ_self _)) rfl,
           List.getLast?_cons_cons]
 
+theorem ne_nil_of_modTwo_eq_some (hs : modTwo s = some a) : s ≠ [] := by
+  intro H
+  simp_rw [modTwo_eq_some_iff, H, List.length_nil, Nat.zero_mod, zero_ne_one, false_and] at hs
+
+theorem modTwo_eq_some_iff' : modTwo s = some a ↔ ∃ s', modTwo s' = none ∧ s = s' ++ [a] := by
+  simp_rw [modTwo_eq_some_iff, modTwo_eq_none_iff]
+  cases s using List.reverseRecOn with | nil => _ | append_singleton s b => _
+  · simp_rw [List.length_nil, Nat.zero_mod, zero_ne_one, false_and, List.nil_eq_append_iff,
+      List.cons_ne_nil, and_false, exists_const]
+  · simp_rw [List.length_append, List.length_singleton, Nat.succ_mod_two_eq_one_iff,
+      List.getLast?_append_cons, List.getLast?_singleton, Option.some_inj,
+      ← List.concat_eq_append, List.concat_inj, ← and_assoc, exists_and_right, exists_eq_right']
+
 theorem modTwo_append_singleton_of_mod_two_length_eq_one (hs : s.length % 2 = 1) :
     modTwo (s ++ [a]) = none := by
   simp_rw [modTwo_eq_none_iff, List.length_append, List.length_singleton,
@@ -926,6 +941,18 @@ theorem modTwo_append_singleton_of_mod_two_length_eq_zero (hs : s.length % 2 = 0
   simp_rw [modTwo_eq_some_iff, List.length_append, List.length_singleton,
     Nat.succ_mod_two_eq_one_iff, hs, List.getLast?_append, List.getLast?_singleton,
     Option.some_or, and_self]
+
+theorem modTwo_append_singleton_of_modTwo_eq_some (hs : modTwo s = some a) :
+    modTwo (s ++ [b]) = none := by
+  refine modTwo_append_singleton_of_mod_two_length_eq_one ?_
+  simp_rw [modTwo_eq_some_iff] at hs
+  exact hs.1
+
+theorem modTwo_append_singleton_of_modTwo_eq_none (hs : modTwo s = none) :
+    modTwo (s ++ [a]) = some a := by
+  refine modTwo_append_singleton_of_mod_two_length_eq_zero ?_
+  simp_rw [modTwo_eq_none_iff] at hs
+  exact hs
 
 theorem modTwo_eq : modTwo s = if s.length % 2 = 1 then s.getLast? else none := by
   rcases hs : modTwo s with (_ | a)
@@ -970,6 +997,15 @@ theorem divTwo_append_singleton_of_modTwo_eq_some (hs : modTwo s = some a) :
       simp_rw [List.cons_append, divTwo_cons_cons, List.cons_append, List.cons_eq_cons, true_and,
         IH s.length ((Nat.lt_succ_self _).trans (Nat.lt_succ_self _)) hs rfl]
 
+theorem divTwo_append_singleton :
+    (modTwo s = none ∧ divTwo (s ++ [b]) = divTwo s) ∨
+    (∃ a, modTwo s = some a ∧ divTwo (s ++ [b]) = divTwo s ++ [node a b])
+    := by
+  rcases hs : modTwo s with (_ | a)
+  · simp_rw [divTwo_append_singleton_of_modTwo_eq_none hs, true_and, true_or]
+  · simp_rw [divTwo_append_singleton_of_modTwo_eq_some hs, Option.some_inj,
+    exists_eq_left', or_true]
+
 theorem length_divTwo : (divTwo s).length = s.length / 2 := by
   generalize hs : s.length = n
   revert s
@@ -994,18 +1030,34 @@ theorem length_divTwo_le_length :
   rw [length_divTwo]
   exact Nat.div_le_self _ _
 
+theorem count_divTwo_add_map_count_getD_modTwo :
+    s.count = (divTwo s).count + (((modTwo s).map BTree.count).getD 0) := by
+  induction s using List.reverseRecOn with | nil => _ | append_singleton s a IH => _
+  · simp_rw [divTwo_nil, count_nil, modTwo_nil, Option.map_none', Option.getD_none]
+  · rcases hs : modTwo s with (_ | a)
+    · simp_rw [count_append, count_singleton, IH, divTwo_append_singleton_of_modTwo_eq_none hs,
+        modTwo_append_singleton_of_modTwo_eq_none hs, hs,
+        Option.map_none', Option.getD_none, add_zero, Option.map_some', Option.getD_some]
+    · simp_rw [count_append, count_singleton, IH, divTwo_append_singleton_of_modTwo_eq_some hs,
+        modTwo_append_singleton_of_modTwo_eq_some hs, hs, Option.map_some', Option.getD_some,
+        Option.map_none', Option.getD_none, add_zero, count_append, count_singleton, count_node,
+        add_assoc]
+
+theorem count_divTwo_of_modTwo_eq_none (hs : modTwo s = none) :
+    s.count = count (divTwo s) := by
+  simp_rw [count_divTwo_add_map_count_getD_modTwo (s := s), hs,
+    Option.map_none', Option.getD_none, add_zero]
+
+theorem count_divTwo_of_modTwo_eq_some (hs : modTwo s = some a) :
+    s.count = count (divTwo s) + a.count := by
+  simp_rw [count_divTwo_add_map_count_getD_modTwo (s := s), hs,
+    Option.map_some', Option.getD_some]
+
 theorem count_divTwo_le_count : count (divTwo s) ≤ count s := by
-  generalize hs : s.length = n
-  revert s
-  induction n using Nat.strongRecOn with | ind n IH => _
-  intro s hs
-  subst hs
-  cases s with | nil => _ | cons a s => _
-  · simp_rw [divTwo_nil, le_rfl]
-  · cases s with | nil => _ | cons a s => _
-    · simp_rw [divTwo_singleton, count_singleton, count_nil, zero_le]
-    · simp_rw [divTwo_cons_cons, count_cons, count_node, add_assoc, add_le_add_iff_left]
-      exact IH _ ((Nat.lt_succ_self _).trans (Nat.lt_succ_self _)) rfl
+  rcases hs : modTwo s with (_ | a)
+  · simp_rw [count_divTwo_of_modTwo_eq_none hs, le_rfl]
+  · simp_rw [count_divTwo_of_modTwo_eq_some hs]
+    exact Nat.le_add_right _ _
 
 def squashStack (s : BTStack α) : BTStack α :=
   if 0 < s.length then match modTwo s with
@@ -1047,13 +1099,18 @@ theorem squashStack_append_singleton_of_modTwo_some (hs : modTwo s = some a) :
   rw [squashStack_of_modTwo_none (s ++ [b]) (modTwo_append_singleton_of_mod_two_length_eq_one
     (modTwo_eq_some_iff.mp hs).1), divTwo_append_singleton_of_modTwo_eq_some hs]
 
+
 theorem count_squashStack (s : BTStack α) : s.squashStack.count = s.count := by
   induction s using List.reverseRecOn with | nil => _ | append_singleton s a IH => _
   · simp_rw [squashStack_nil]
   · simp_rw [count_append_singleton]
     rcases hs : modTwo s with (_ | a)
     · simp_rw [squashStack_append_singleton_of_modTwo_none hs, count_cons, IH, add_comm]
-    · simp_rw [squashStack_append_singleton_of_modTwo_some hs]
+    · simp_rw [modTwo_eq_some_iff'] at hs
+      rcases hs with ⟨s, hs₁, hs₂⟩
+      subst hs₂
+      simp [count_append]
+      simp_rw [squashStack_append_singleton_of_modTwo_some hs]
   generalize hs : s.length = n
   revert s
   induction n using Nat.strongRecOn with | ind n IH => _

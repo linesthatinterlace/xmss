@@ -521,6 +521,29 @@ section Skeleton
 
 @[simp] theorem skeleton_node : (node l r).skeleton = node l.skeleton r.skeleton := rfl
 
+theorem skeleton_toList : t.skeleton.toList = List.replicate (t.count) () := by
+  induction t with | leaf x => _ | node l r IHL IHR => _
+  · rfl
+  · simp_rw [skeleton_node, count_node, toList_node, IHL, IHR, List.replicate_append_replicate]
+
+theorem skeleton_count : t.skeleton.count = t.count := by
+  simp_rw [← length_toList (t := t.skeleton), skeleton_toList, List.length_replicate]
+
+theorem eq_iff_skeleton_eq_toList_eq : s = t ↔ s.skeleton = t.skeleton ∧ s.toList = t.toList := by
+  induction t generalizing s with | leaf x => _ | node l r IHL IHR => _
+  · simp_rw [skeleton_leaf, toList_leaf]
+    cases s
+    · simp_rw [skeleton_leaf, leaf_inj_iff, toList_leaf, List.cons_eq_cons, and_true, true_and]
+    · simp_rw [skeleton_node, node_ne_leaf, false_and]
+  · simp_rw [skeleton_node, toList_node]
+    cases s
+    · simp_rw [skeleton_leaf, leaf_ne_node, false_and]
+    · simp_rw [skeleton_node, node_inj_iff, toList_node]
+      refine ⟨fun ⟨hl, hr⟩ => hl ▸ hr ▸ ⟨⟨rfl, rfl⟩, rfl⟩, fun ⟨⟨hl, hr⟩, hlr⟩ => ?_⟩
+      simp_rw [IHL, IHR, hl, hr, true_and]
+      exact List.append_inj' hlr
+        (length_toList ▸ skeleton_count ▸ hr ▸ skeleton_count.symm ▸ length_toList.symm)
+
 end Skeleton
 
 def replicate {α : Type u} (a : α) : BTree Unit → BTree α
@@ -810,7 +833,6 @@ variable {s t : BTStack α} {a b l r : BTree α} {v : α}
 
 open BTree
 
-
 def count : BTStack α → ℕ
   | [] => 0
   | (a :: s) => a.count + count s
@@ -830,6 +852,19 @@ theorem count_append : count (s ++ t) = s.count + t.count := by
   · simp_rw [List.append_nil, count_nil, add_zero]
   · rw [List.append_cons, IH, count_append_singleton, count_cons, add_assoc]
 
+def toList : BTStack α → List α
+  | [] => []
+  | a :: s => a.toList ++ toList s
+
+@[simp] theorem toList_nil : toList ([] : BTStack α) = [] := rfl
+@[simp] theorem toList_cons : toList (a :: s) = a.toList ++ s.toList := rfl
+
+@[simp]
+theorem length_toList : s.toList.length = s.count := by
+  induction s
+  · rfl
+  · simp_rw [toList_cons, List.length_append, BTree.length_toList, count_cons, add_right_inj]
+    assumption
 
 def mulTwo : BTStack α → BTStack α
   | [] => []
@@ -1072,13 +1107,13 @@ theorem squashStack_nil : squashStack ([] : BTStack α) = [] := by
   unfold squashStack
   exact if_neg (List.ne_nil_of_length_pos.mt (fun h => h rfl))
 
-theorem squashStack_of_modTwo_some (s : BTStack α) (a : BTree α) (hs : modTwo s = some a) :
+theorem squashStack_of_modTwo_some (hs : modTwo s = some a) :
     squashStack s = a :: (divTwo s).squashStack := by
   cases s
   · contradiction
   · rw [squashStack.eq_def, List.length_cons, if_pos (Nat.zero_lt_succ _), hs]
 
-theorem squashStack_of_modTwo_none (s : BTStack α) (hs : modTwo s = none) :
+theorem squashStack_of_modTwo_none (hs : modTwo s = none) :
     squashStack s = (divTwo s).squashStack := by
   cases s
   · simp_rw [divTwo_nil]
@@ -1086,49 +1121,29 @@ theorem squashStack_of_modTwo_none (s : BTStack α) (hs : modTwo s = none) :
 
 @[simp]
 theorem squashStack_singleton : squashStack [a] = [a] := by
-  rw [squashStack_of_modTwo_some [a] a modTwo_singleton, divTwo_singleton, squashStack_nil]
+  rw [squashStack_of_modTwo_some modTwo_singleton, divTwo_singleton, squashStack_nil]
 
 theorem squashStack_append_singleton_of_modTwo_none (hs : modTwo s = none) :
     squashStack (s ++ [a]) = a :: squashStack s := by
-  rw [squashStack_of_modTwo_some (s ++ [a]) a
+  rw [squashStack_of_modTwo_some
     (modTwo_append_singleton_of_mod_two_length_eq_zero (modTwo_eq_none_iff.mp hs)),
-    divTwo_append_singleton_of_modTwo_eq_none hs, squashStack_of_modTwo_none s hs]
+    divTwo_append_singleton_of_modTwo_eq_none hs, squashStack_of_modTwo_none hs]
 
 theorem squashStack_append_singleton_of_modTwo_some (hs : modTwo s = some a) :
     squashStack (s ++ [b]) = squashStack (s.divTwo ++ [node a b]) := by
-  rw [squashStack_of_modTwo_none (s ++ [b]) (modTwo_append_singleton_of_mod_two_length_eq_one
+  rw [squashStack_of_modTwo_none (modTwo_append_singleton_of_mod_two_length_eq_one
     (modTwo_eq_some_iff.mp hs).1), divTwo_append_singleton_of_modTwo_eq_some hs]
 
-
-theorem count_squashStack (s : BTStack α) : s.squashStack.count = s.count := by
-  induction s using List.reverseRecOn with | nil => _ | append_singleton s a IH => _
-  · simp_rw [squashStack_nil]
-  · simp_rw [count_append_singleton]
-    rcases hs : modTwo s with (_ | a)
-    · simp_rw [squashStack_append_singleton_of_modTwo_none hs, count_cons, IH, add_comm]
-    · simp_rw [modTwo_eq_some_iff'] at hs
-      rcases hs with ⟨s, hs₁, hs₂⟩
-      subst hs₂
-      simp [count_append]
-      simp_rw [squashStack_append_singleton_of_modTwo_some hs]
-  generalize hs : s.length = n
-  revert s
-  induction n using Nat.strongRecOn with | ind n IH => _
-  intro s hs
-  subst hs
-  cases s with | nil => _ | cons a s => _
-  · simp_rw [squashStack_nil]
-  · cases s with | nil => _ | cons a s => _
-    · simp_rw [squashStack_singleton]
-    · simp
-      simp_rw [divTwo_cons_cons, count_cons, count_node, add_assoc, add_le_add_iff_left]
-      exact IH _ ((Nat.lt_succ_self _).trans (Nat.lt_succ_self _)) rfl
-
-#eval! squashStack [leaf 1, leaf 2, leaf 3, leaf 4, leaf 5, leaf 6, leaf 7]
-
-#eval modTwo [leaf 2, leaf 3]
-
-#eval squashStack [leaf 1, leaf 2, leaf 3, leaf 4, leaf 5, leaf 6, leaf 7]
+theorem squashStack_two_pow :
+    ∀ s, s.length = 2^n → ∃ d : BTree α, squashStack s = [d] := by
+  induction n with | zero => _ | succ n IH => _
+  · simp_rw [pow_zero, List.length_eq_one_iff, forall_exists_index]
+    intro _ _ hx
+    simp_rw [hx, squashStack_singleton, List.cons_eq_cons, and_true, exists_eq']
+  · intro s hs
+    have hs' : modTwo s = none := by simp_rw [modTwo_eq_none_iff, hs, pow_succ', Nat.mul_mod_right]
+    simp_rw [squashStack_of_modTwo_none hs']
+    exact IH _ (length_divTwo ▸ hs ▸ by simp_rw [pow_succ', mul_div_cancel_left₀ _ two_ne_zero])
 
 def addOne? : Option (BTree α) → BTStack α → BTStack α
   | none => id
@@ -1388,64 +1403,60 @@ theorem IsPerfect.cons_of (ha : a.IsPerfect) : IsPerfect s → IsPerfect (a :: s
 
 end IsPerfect
 
-def getAtHeight (s : BTStack α) (n : ℕ) : Option (BTree α) :=
-  s.nilConsInduction none
-  (fun a _ get => match (cmp n a.height) with
+def getAtHeight (n : ℕ) : BTStack α → Option (BTree α)
+  | [] => none
+  | a :: s => match (cmp n a.height) with
     | .lt => none
     | .eq => some a
-    | .gt => get )
+    | .gt => getAtHeight n s
 
 section GetAtHeight
 
-@[simp] theorem getAtHeight_nil : (nil (α := α)).getAtHeight n = none := rfl
+@[simp] theorem getAtHeight_nil : getAtHeight n ([] : BTStack α) = none := rfl
 
 theorem getAtHeight_cons_nil_of_ne_height (hn : n ≠ a.height) :
-    (cons a nil).getAtHeight n = none := by
+    getAtHeight n [a] = none := by
   unfold getAtHeight
-  simp_rw [nilConsInduction_cons, nilConsInduction_nil]
   cases h : cmp n a.height
   · rfl
   · rw [cmp_eq_eq_iff] at h
     contradiction
   · rfl
 
-theorem getAtHeight_singleton_of_ne_height (hn : n ≠ a.height) :
-    (singleton a).getAtHeight n = none := getAtHeight_cons_nil_of_ne_height hn
-
 @[simp] theorem getAtHeight_cons_of_lt_height (hn : n < a.height) :
-    (cons a s).getAtHeight n = none := by
+    getAtHeight n (a :: s) = none := by
   unfold getAtHeight
-  simp_rw [nilConsInduction_cons, (cmp_eq_lt_iff _ _).mpr hn]
+  simp_rw [(cmp_eq_lt_iff _ _).mpr hn]
 
 @[simp] theorem getAtHeight_cons_of_gt_height (hn : a.height < n) :
-    (cons a s).getAtHeight n = s.getAtHeight n := by
-  unfold getAtHeight
-  simp_rw [nilConsInduction_cons, (cmp_eq_gt_iff _ _).mpr hn]
+    getAtHeight n (a :: s) = s.getAtHeight n := by
+  rw [getAtHeight]
+  simp_rw [(cmp_eq_gt_iff _ _).mpr hn]
 
-@[simp] theorem getAtHeight_cons_height : (cons a s).getAtHeight a.height = some a := by
+@[simp] theorem getAtHeight_cons_height : getAtHeight a.height (a :: s) = some a := by
   unfold getAtHeight
-  simp_rw [nilConsInduction_cons, cmp_self_eq_eq]
+  simp_rw [cmp_self_eq_eq]
 
-@[simp] theorem getAtHeight_singleton_height : (singleton a).getAtHeight a.height = some a :=
+@[simp] theorem getAtHeight_singleton_height : getAtHeight a.height [a] = some a :=
   getAtHeight_cons_height
 
 theorem getAtHeight_of_lt_firstHeight (hn : n < s.firstHeight) : s.getAtHeight n = none := by
   cases s
   · exact getAtHeight_nil
-  · rw [firstHeight_eq_getFirst_height cons_ne_nil, getFirst_cons] at hn
+  · rw [firstHeight_eq_head_height (List.cons_ne_nil _ _), List.head_cons] at hn
     exact getAtHeight_cons_of_lt_height hn
 
-theorem getAtHeight_firstHeight (hs : s ≠ nil) : s.getAtHeight (s.firstHeight) =
-  some (s.getFirst hs) := by
+theorem getAtHeight_firstHeight (hs : s ≠ []) : s.getAtHeight (s.firstHeight) =
+  some (s.head hs) := by
   cases s
   · exact hs.irrefl.elim
-  · simp_rw [firstHeight_eq_getFirst_height hs, getFirst_cons, getAtHeight_cons_height]
+  · simp_rw [firstHeight_eq_head_height hs, List.head_cons, getAtHeight_cons_height]
 
 theorem getAtHeight_eq_none_of_forall_ne_height (hn : ∀ a ∈ s, n ≠ a.height) :
   s.getAtHeight n = none := by
   induction s with | nil => _ | cons b s IH => _
   · exact getAtHeight_nil
-  · simp_rw [mem_cons, ne_eq, forall_eq_or_imp] at hn
+  · simp_rw [List.mem_cons, ne_eq, forall_eq_or_imp] at hn
     rcases Ne.lt_or_lt (hn.left) with hbn | hbn
     · rw [getAtHeight_cons_of_lt_height hbn]
     · rw [getAtHeight_cons_of_gt_height hbn]
@@ -1461,8 +1472,8 @@ theorem exists_mem_eq_height_of_getAtHeight_isSome (hn : (s.getAtHeight n).isSom
 theorem IsSMH.getAtHeight_height_of_mem (hsh : IsSMH s) (ha : a ∈ s) :
     s.getAtHeight a.height = some a := by
   induction s with | nil => _ | cons b s IH => _
-  · exact (not_mem_nil ha).elim
-  · rw [mem_cons] at ha
+  · exact (List.not_mem_nil _ ha).elim
+  · rw [List.mem_cons] at ha
     rcases ha with (rfl | ha)
     · exact getAtHeight_cons_height
     · rw [IsSMH_cons_iff] at hsh
@@ -1490,58 +1501,56 @@ theorem IsSMH.getAtHeight_of_lastHeight_lt (hsh : IsSMH s) (hn : s.lastHeight < 
 
 end GetAtHeight
 
-def push (s : BTStack α) : BTree α → BTStack α :=
-  s.nilConsInduction (singleton) (fun a s push b =>
-    if a.height ≤ b.height then push (node (a.addToHeight (b.height - a.height)) b)
-    else cons b (cons a s))
+def push (b : BTree α) : BTStack α → BTStack α
+  | [] => [b]
+  | a :: s => if a.height ≤ b.height then
+    push (node (a.addToHeight (b.height - a.height)) b) s else b :: a :: s
 
 section Push
 
-@[simp] theorem push_nil : (nil (α := α)).push a = singleton a := by
-  unfold push
-  rw [nilConsInduction_nil]
+@[simp] theorem push_nil : push a ([] : BTStack α) = [a] := rfl
 
 @[simp] theorem push_cons_of_height_lt (h : b.height < a.height) :
-    (cons a s).push b = cons b (cons a s) := by
+    push b (a :: s) =  b :: a :: s := by
   unfold push
-  simp_rw [nilConsInduction_cons, if_neg h.not_le]
+  simp_rw [if_neg h.not_le]
 
 @[simp] theorem push_cons_of_height_ge (h : a.height ≤ b.height) :
-    (cons a s).push b = s.push (node (a.addToHeight (b.height - a.height)) b) := by
-  unfold push
-  simp_rw [nilConsInduction_cons, if_pos h]
+    push b (a :: s) = push (node (a.addToHeight (b.height - a.height)) b) s := by
+  rw [push]
+  simp_rw [if_pos h]
 
 @[simp] theorem push_cons_of_height_eq (h : a.height = b.height) :
-    (cons a s).push b = s.push (node a b) := by
+    push b (a :: s) = s.push (node a b) := by
   simp_rw [push_cons_of_height_ge h.le, h, Nat.sub_self, addToHeight_zero]
 
-@[simp] theorem mem_push_nil : c ∈ nil.push b ↔ c = b := by
-  simp_rw [push_nil, mem_singleton]
+@[simp] theorem mem_push_nil : c ∈ push b [] ↔ c = b := by
+  simp_rw [push_nil, List.mem_singleton]
 
 @[simp] theorem mem_push_cons_of_height_lt (h : b.height < a.height) :
-    c ∈ (cons a s).push b ↔ c = b ∨ c = a ∨ c ∈ s  := by
-  simp_rw [push_cons_of_height_lt h, mem_cons]
+    c ∈ push b (a :: s) ↔ c = b ∨ c = a ∨ c ∈ s  := by
+  simp_rw [push_cons_of_height_lt h, List.mem_cons]
 
 @[simp] theorem mem_push_cons_of_height_ge (h : a.height ≤ b.height) :
-    c ∈ (cons a s).push b ↔ c ∈ s.push (node (a.addToHeight (b.height - a.height)) b) := by
+    c ∈ push b (a :: s) ↔ c ∈ s.push (node (a.addToHeight (b.height - a.height)) b) := by
   simp_rw [push_cons_of_height_ge h]
 
 @[simp] theorem mem_push_cons_of_height_eq (h : a.height = b.height) :
-    c ∈ (cons a s).push b ↔ c ∈ s.push (node a b) := by
+    c ∈ push b (a :: s) ↔ c ∈ s.push (node a b) := by
   simp_rw [push_cons_of_height_eq h]
 
-@[simp] theorem push_ne_nil : s.push b ≠ nil := by
+@[simp] theorem push_ne_nil : s.push b ≠ [] := by
   induction s generalizing b with | nil => _ | cons a s IH => _
-  · simp_rw [push_nil, ne_eq, singleton_ne_nil, not_false_eq_true]
+  · simp_rw [push_nil, ne_eq, List.cons_ne_nil, not_false_eq_true]
   · by_cases hab : a.height ≤ b.height
     · rw [push_cons_of_height_ge hab]
       exact IH
     · rw [push_cons_of_height_lt (lt_of_not_le hab)]
-      exact cons_ne_nil
+      exact List.cons_ne_nil _ _
 
-theorem push_of_lt_firstHeight (hbs : b.height < s.firstHeight) : s.push b = cons b s := by
+theorem push_of_lt_firstHeight (hbs : b.height < s.firstHeight) : s.push b = b :: s := by
   cases s
-  · simp_rw [push_nil, cons_nil]
+  · simp_rw [push_nil]
   · exact push_cons_of_height_lt hbs
 
 theorem height_le_firstHeight_push : b.height ≤ (s.push b).firstHeight := by
@@ -1556,11 +1565,11 @@ theorem firstHeight_push_of_height_ne_firstHeight (hb : b.height < s.firstHeight
     (s.push b).firstHeight = b.height := by
   rw [push_of_lt_firstHeight hb, firstHeight_cons]
 
-theorem firstHeight_push_nil : (nil.push b).firstHeight = b.height := by
+theorem firstHeight_push_nil : (push b []).firstHeight = b.height := by
   rw [push_nil, firstHeight_singleton]
 
 theorem firstHeight_push_of_firstHeight_le_of_ne_nil (hbs : s.firstHeight ≤ b.height)
-    (hs : s ≠ nil) : b.height < (s.push b).firstHeight := by
+    (hs : s ≠ []) : b.height < (s.push b).firstHeight := by
   cases s
   · exact hs.irrefl.elim
   · rw [firstHeight_cons] at hbs
@@ -1568,50 +1577,50 @@ theorem firstHeight_push_of_firstHeight_le_of_ne_nil (hbs : s.firstHeight ≤ b.
     exact height_le_firstHeight_push.trans_lt' right_height_lt
 
 theorem push_eq_cons_iff :
-    s.push b = cons b t ↔ (s = t) ∧ (s ≠ nil → b.height < s.firstHeight) := by
+    push b s = b :: t ↔ s = t ∧ (s ≠ [] → b.height < s.firstHeight) := by
   cases s with | nil => _ | cons a _ => _
-  · simp_rw [push_nil, singleton_eq_cons_iff, true_and, ne_eq, not_true_eq_false,
-      false_implies, and_true, eq_comm]
-  · simp_rw [ne_eq, cons_ne_nil, not_false_eq_true, firstHeight_cons, forall_const]
+  · simp_rw [push_nil, List.cons_eq_cons, true_and, ne_eq, not_true_eq_false,
+      false_implies, and_true]
+  · simp_rw [ne_eq, List.cons_ne_nil, not_false_eq_true, firstHeight_cons, forall_const]
     · rcases lt_or_le b.height a.height with hab | hab
-      · simp_rw [push_cons_of_height_lt hab, cons_inj_iff, hab, true_and, and_true]
+      · simp_rw [push_cons_of_height_lt hab, List.cons_eq_cons, hab, true_and, and_true]
       · simp_rw [push_cons_of_height_ge hab, hab.not_lt, and_false, iff_false]
         intro H
         have C := (firstHeight_cons ▸ congrArg (firstHeight) H) ▸ height_le_firstHeight_push
         simp_rw [height_node, height_addToHeight, Nat.succ_le_iff, (le_max_right _ _).not_lt] at C
 
-theorem push_of_height_lt (hbs : s ≠ nil → b.height < s.firstHeight) : s.push b = cons b s := by
+theorem push_of_height_lt (hbs : s ≠ [] → b.height < s.firstHeight) : s.push b = b :: s := by
   rw [push_eq_cons_iff]
   exact ⟨rfl, hbs⟩
 
-theorem length_push_nil : (nil.push a).length = 1 := by
-  simp_rw [push_nil, length_singleton]
+theorem length_push_nil : (push a []).length = 1 := by
+  simp_rw [push_nil, List.length_singleton]
 
 theorem length_push_cons_of_height_lt (h : b.height < a.height) :
-    ((cons a s).push b).length = (cons a s).length + 1 := by
-  simp_rw [push_cons_of_height_lt h, length_cons]
+    (push b (a :: s)).length = (a :: s).length + 1 := by
+  simp_rw [push_cons_of_height_lt h, List.length_cons]
 
 theorem length_push_le : (s.push b).length ≤ s.length + 1 := by
   induction s generalizing b with | nil => _ | cons a s IH => _
-  · simp_rw [push_nil, length_singleton, length_nil, Nat.zero_add, le_rfl]
+  · simp_rw [push_nil, List.length_singleton, List.length_nil, Nat.zero_add, le_rfl]
   · rcases lt_or_le b.height a.height with hab | hab
-    · rw [push_cons_of_height_lt hab, length_cons]
+    · rw [push_cons_of_height_lt hab, List.length_cons]
     · rw [push_cons_of_height_ge hab]
       exact IH.trans (Nat.succ_le_succ (Nat.lt_succ_self _).le)
 
 theorem push_eq_cons_iff_length_eq_succ :
-    s.push b = cons b s ↔ (s.push b).length = s.length + 1 := by
+    s.push b = b :: s ↔ (s.push b).length = s.length + 1 := by
   refine ⟨fun h => h ▸ rfl, ?_⟩
   cases s with | nil => _ | cons a s => _
-  · simp_rw [push_nil, cons_nil, implies_true]
+  · simp_rw [push_nil, implies_true]
   · rcases lt_or_le b.height a.height with hab | hab
     · simp_rw [push_cons_of_height_lt hab, implies_true]
     · simp_rw [push_cons_of_height_ge hab]
-      simp_rw [length_cons]
+      simp_rw [List.length_cons]
       exact fun H => ((Nat.le_of_succ_le_succ (H.symm.trans_le length_push_le)).not_lt
         (Nat.lt_succ_self _)).elim
 
-theorem IsSMH.push_of IsSMH (hsh : IsSMH s) : (s.push b) := by
+theorem IsSMH.push_of (hsh : IsSMH s) : IsSMH (push b s) := by
   induction s generalizing b with | nil => _ | cons a s IH => _
   · simp_rw [push_nil, IsSMH_singleton]
   · by_cases hab : a.height ≤ b.height
@@ -1619,6 +1628,20 @@ theorem IsSMH.push_of IsSMH (hsh : IsSMH s) : (s.push b) := by
       exact IH hsh.of_cons
     · simp_rw [push_cons_of_height_lt (lt_of_not_le hab)]
       exact hsh.cons_cons (lt_of_not_le hab)
+
+theorem IsSMH.count_push (hsh : IsSMH s) (hb : b.height ≤ s.firstHeight) :
+    (push b s).count = b.count + s.count := by
+  induction s generalizing b with | nil => _ | cons a s IH => _
+  · rfl
+  · simp_rw [firstHeight_cons] at hb
+    rcases hb.eq_or_lt with hab | hab
+    · simp_rw [push_cons_of_height_ge hab.ge, hab, Nat.sub_self, addToHeight_zero]
+      by_cases hs : s = []
+      · simp_rw [hs, push_nil, count_cons, count_node, count_nil, add_zero, add_comm]
+      · rw [IH hsh.of_cons (Nat.succ_le_of_lt (hab.symm ▸ (max_self a.height).symm ▸
+          (hsh.height_cons_lt_firstHeight hs))), count_node, count_cons, add_comm b.count,
+          add_assoc, add_assoc, add_comm b.count]
+    · simp_rw [push_cons_of_height_lt hab, count_cons]
 
 theorem IsPerfect.push_of_IsPerfect (hb : b.IsPerfect) (has : IsPerfect s) :
     IsPerfect (s.push b) := by
@@ -1650,77 +1673,105 @@ theorem IsSMH.height_ge_of_mem_push (hc : c ∈ s.push b) (hsh : IsSMH s) :
 
 end Push
 
-def pushStack (s : BTStack α) (p : BTStack α) : BTStack α := p.toList.foldr (flip push) s
+def pushStack (s : BTStack α) (t : BTStack α) : BTStack α := s.foldr push t
 
 section PushStack
 
 variable {u v : BTStack α}
 
-@[simp] theorem pushStack_nil_right : s.pushStack nil = s := List.foldr_nil
+@[simp] theorem pushStack_nil : pushStack [] s  = s := List.foldr_nil
 
-@[simp] theorem pushStack_cons_right : s.pushStack (cons a t) = (s.pushStack t).push a :=
-    List.foldr_cons _
+@[simp] theorem pushStack_cons : pushStack (a :: s) t = push a (pushStack s t) := List.foldr_cons _
 
-@[simp] theorem pushStack_append_singleton_right : s.pushStack (append_singleton t a) = (s.push a).pushStack t :=
+@[simp] theorem pushStack_append_singleton :
+    pushStack (s ++ [a]) t = pushStack s (push a t) := List.foldr_append _ _ _ _
+
+@[simp] theorem pushStack_singleton : pushStack [a] s = push a s := by
+  simp only [pushStack_nil, pushStack_cons]
+
+@[simp] theorem pushStack_append : pushStack (u ++ v) s = pushStack u (pushStack v s):=
     List.foldr_append _ _ _ _
 
-@[simp] theorem pushStack_singleton : s.pushStack (singleton a) = s.push a := by
-  simp only [← cons_nil, pushStack_nil_right, pushStack_cons_right]
+@[simp] theorem IsSMH.pushStack (hsh : IsSMH s) (hth : IsSMH t) : IsSMH (pushStack s t) := by
+  induction s using List.reverseRecOn generalizing t with
+    | nil => _ | append_singleton s a IH => _
+  · rw [pushStack_nil]
+    exact hth
+  · rw [pushStack_append_singleton]
+    exact IH hsh.of_append_singleton hth.push_of
 
-@[simp] theorem pushStack_append : s.pushStack (u.append v) = (s.pushStack v).pushStack u :=
-    List.foldr_append _ _ _ _
+@[simp] theorem IsPerfect.pushStack (hs : IsPerfect s) (ht : IsPerfect t) :
+    IsPerfect (pushStack s t) := by
+  induction s generalizing t with | nil => _ | cons a s IH => _
+  · exact ht
+  · simp_rw [pushStack_cons]
+    exact (IH hs.of_cons_tail ht).push_of_IsPerfect hs.of_cons_head
 
-@[simp] theorem IsSMH.pushStack IsSMH (hsh : IsSMH s) (hth : t.IsSMH) : (s.pushStack t) := by
-  induction t using nilappend_singletonInduction generalizing s with | nil => _ | append_singleton t a IH => _
-  · rw [pushStack_nil_right]
-    exact hsh
-  · rw [pushStack_append_singleton_right]
-    exact IH hsh.push_of hth.of_append_singleton
-
-@[simp] theorem IsPerfect.pushStack (hs : IsPerfect s) (ht : t.IsPerfect) :
-    IsPerfect (s.pushStack t) := by
-  induction t generalizing s with | nil => _ | cons a t IH => _
-  · exact hs
-  · simp_rw [pushStack_cons_right]
-    exact (IH hs ht.of_cons_tail).push_of_IsPerfect ht.of_cons_head
-
-theorem pushStack_eq_append_of_lt (hst : s ≠ nil → t ≠ nil → t.lastHeight < s.firstHeight)
-  (hth : t.IsSMH) : s.pushStack t = t.append s := by
-  induction t using nilappend_singletonInduction generalizing s with | nil => _ | append_singleton t a IH => _
-  · simp_rw [pushStack_nil_right, nil_append]
-  · simp_rw [ne_eq, append_singleton_ne_nil, not_false_eq_true, lastHeight_append_singleton, forall_const] at hst
-    simp_rw [pushStack_append_singleton_right]
+theorem pushStack_eq_appendds_of_lt (hst : u.lastHeight ≤ v.firstHeight)
+    (huh : u.IsSMH) (hvh : v.IsSMH) : (pushStack u v).count = u.count + v.count := by
+  induction u generalizing v with | nil => _ | cons u a IH => _
+  · simp_rw [pushStack_nil, count_nil, zero_add]
+  · simp_rw [lastHeight_append_singleton] at hst
+    simp_rw [pushStack_append_singleton, count_append_singleton]
+    cases v
+    · simp_rw [push_nil, count_nil, add_zero]
+      rw [IH]
+    have hv : lastHeight u ≤ (push a v).firstHeight := by
+      cases v
+      · simp_rw [push_nil, firstHeight_cons]
+        simp_rw [IsSMH_append_singleton_iff] at
+    rw [IH _ huh.of_append_singleton (hvh.push_of)]
+    rw [IsSMH.count_push hvh hst, add_assoc]
+    sorry
+    rw [firstHeight_push_of_height_ne_firstHeight]
+    rw [IsSMH.count_push (IsSMH.pushStack (huh.of_cons) hvh)]
+    rw [IH _ (huh.of_cons) hvh]
+    simp_rw [ne_eq, List.append_ne_nil_of_right_ne_nil _ (List.cons_ne_nil _ _), not_false_eq_true,
+      lastHeight_append_singleton, forall_const] at hst
+    simp_rw [pushStack_append_singleton]
     rw [push_of_height_lt hst]
-    refine (IH ?_ hth.of_append_singleton).trans append_cons_eq_append_singleton_append
-    simp_rw [ne_eq, cons_ne_nil, not_false_eq_true, firstHeight_cons, forall_const]
+    refine (IH ?_ hth.of_append_singleton).trans (List.append_cons _ _ _)
+    simp_rw [ne_eq, List.cons_ne_nil, not_false_eq_true, firstHeight_cons, forall_const]
     exact hth.lastHeight_lt_height_append_singleton
+
+theorem pushStack_eq_append_of_lt (hst : s ≠ [] → t ≠ [] → s.lastHeight < t.firstHeight)
+  (hsh : s.IsSMH) : pushStack s t = s ++ t := by
+  induction s using List.reverseRecOn generalizing t with | nil => _ | append_singleton s a IH => _
+  · simp_rw [pushStack_nil, List.nil_append]
+  · simp_rw [ne_eq, List.append_ne_nil_of_right_ne_nil _ (List.cons_ne_nil _ _), not_false_eq_true,
+      lastHeight_append_singleton, forall_const] at hst
+    simp_rw [pushStack_append_singleton]
+    rw [push_of_height_lt hst]
+    refine (IH ?_ hsh.of_append_singleton).trans (List.append_cons _ _ _)
+    simp_rw [ne_eq, List.cons_ne_nil, not_false_eq_true, firstHeight_cons, forall_const]
+    exact hsh.lastHeight_lt_height_append_singleton
 
 end PushStack
 
-def ofStack (s : BTStack α) := nil.pushStack s
+def ofStack (s : BTStack α) := pushStack s []
 
 section OfStack
 
-@[simp] theorem ofStack_nil : (nil : BTStack α).ofStack = nil := rfl
+@[simp] theorem ofStack_nil : ofStack ([] : BTStack α) = [] := rfl
 
-@[simp] theorem ofStack_append_singleton : (append_singleton s a).ofStack = (singleton a).pushStack s :=
-  pushStack_append_singleton_right
+@[simp] theorem ofStack_append_singleton :
+    ofStack (s ++ [a]) = pushStack s [a] := pushStack_append_singleton
 
-@[simp] theorem ofStack_cons : (cons a s).ofStack = s.ofStack.push a :=
-  pushStack_cons_right
+@[simp] theorem ofStack_cons : ofStack (a :: s) = push a s.ofStack := pushStack_cons
 
-@[simp] theorem ofStack_singleton : (singleton a).ofStack = singleton a := rfl
+@[simp] theorem ofStack_singleton : ofStack [a] = singleton a := rfl
 
-@[simp] theorem ofStack_append : (s.append t).ofStack = t.ofStack.pushStack s := pushStack_append
+@[simp] theorem ofStack_append : ofStack (s ++ t) = pushStack s t.ofStack := pushStack_append
 
-theorem IsSMH.ofStack : IsSMH s → s.ofStack.IsSMH := IsSMH.pushStack IsSMH_nil
+theorem IsSMH.ofStack (hsh : IsSMH s) : s.ofStack.IsSMH := IsSMH.pushStack hsh IsSMH_nil
 
-theorem IsPerfect.ofStack : IsPerfect s → s.ofStack.IsPerfect := IsPerfect.pushStack IsPerfect_nil
+theorem IsPerfect.ofStack (hs : IsPerfect s) : s.ofStack.IsPerfect :=
+  IsPerfect.pushStack hs IsPerfect_nil
 
 theorem ofStack_length_le : s.ofStack.length ≤ s.length := by
   induction s
   · simp_rw [ofStack_nil, le_refl]
-  · simp_rw [ofStack_cons, length_cons]
+  · simp_rw [ofStack_cons, List.length_cons]
     exact length_push_le.trans (Nat.succ_le_succ (by assumption))
 
 theorem ofStack_eq_of_ofStack_length_eq (hs : s.ofStack.length = s.length) : s.ofStack = s := by
@@ -1728,12 +1779,12 @@ theorem ofStack_eq_of_ofStack_length_eq (hs : s.ofStack.length = s.length) : s.o
   have hs' := hs ▸ hsOf
   clear hs ; revert hsOf ; revert hs'
   induction n generalizing s with | zero => _ | succ n IH => _
-  · simp_rw [length_eq_zero]
+  · simp_rw [List.length_eq_zero_iff]
     rintro rfl _
     rfl
   · cases s with | nil => _ | cons a s => _
-    · simp_rw [length_nil, (Nat.succ_ne_zero _).symm, false_implies]
-    · simp_rw [length_cons, add_left_inj, ofStack_cons]
+    · simp_rw [List.length_nil, (Nat.succ_ne_zero _).symm, false_implies]
+    · simp_rw [List.length_cons, add_left_inj, ofStack_cons]
       intros hs hsOf
       have H := le_antisymm (hs ▸ ofStack_length_le)
         (Nat.le_of_add_le_add_right (hsOf ▸ length_push_le))
@@ -1744,25 +1795,25 @@ theorem ofStack_eq_of_ofStack_length_eq (hs : s.ofStack.length = s.length) : s.o
 
 end OfStack
 
-def pushLeaf (s : BTStack α) (x : α) : BTStack α := s.push (leaf x)
+def pushLeaf (x : α) (s : BTStack α) : BTStack α := push (leaf x) s
 
 section PushLeaf
 
 variable {x y : α}
 
-@[simp] theorem push_leaf : s.push (leaf x) = s.pushLeaf x := rfl
+@[simp] theorem push_leaf : push (leaf x) s = s.pushLeaf x := rfl
 
-@[simp] theorem pushLeaf_nil : (nil (α := α)).pushLeaf x= singleton (leaf x) := push_nil
+@[simp] theorem pushLeaf_nil : pushLeaf x [] = [leaf x] := push_nil
 
 @[simp] theorem pushLeaf_cons_leaf  :
-    (cons (leaf x) s).pushLeaf y = s.push (node (leaf x) (leaf y)) := push_cons_of_height_eq rfl
+    pushLeaf y ((leaf x) :: s) = push (node (leaf x) (leaf y)) s := push_cons_of_height_eq rfl
 
 @[simp] theorem pushLeaf_cons_node  :
-    (cons (node l r) s).pushLeaf y = cons (leaf y) (cons (node l r) s) :=
+    pushLeaf y ((node l r) :: s) = (leaf y) :: ((node l r) :: s) :=
   push_cons_of_height_lt (Nat.succ_pos _)
 
 theorem pushLeaf_of_one_le_firstHeight (hbs : 1 ≤ s.firstHeight) :
-    s.pushLeaf x = cons (leaf x) s := push_of_lt_firstHeight (Nat.lt_of_succ_le hbs)
+    s.pushLeaf x = (leaf x) :: s := push_of_lt_firstHeight (Nat.lt_of_succ_le hbs)
 
 theorem pushLeaf_pushLeaf_of_one_le_firstHeight (hbs : 1 ≤ s.firstHeight) :
     (s.pushLeaf x).pushLeaf y = s.push (node (leaf x) (leaf y)) := by
@@ -1772,11 +1823,11 @@ theorem pushLeaf_pushLeaf_of_one_le_firstHeight (hbs : 1 ≤ s.firstHeight) :
     (s.pushLeaf x).firstHeight = 0 := by
   rw [pushLeaf_of_one_le_firstHeight hs, firstHeight_cons, height_leaf]
 
-@[simp] theorem firstHeight_pushLeaf_nil : (nil.pushLeaf x).firstHeight = 0 :=
+@[simp] theorem firstHeight_pushLeaf_nil : (pushLeaf x []).firstHeight = 0 :=
     firstHeight_singleton
 
 @[simp] theorem one_le_firstHeight_pushLeaf_of_firstHeight_zero_of_ne_nil
-    (hbs : s.firstHeight = 0) (hs : s ≠ nil) : 1 ≤ (s.pushLeaf x).firstHeight := by
+    (hbs : s.firstHeight = 0) (hs : s ≠ []) : 1 ≤ (s.pushLeaf x).firstHeight := by
   cases s with | nil => _ | cons a s => _
   · exact hs.irrefl.elim
   · simp_rw [firstHeight_cons, height_eq_zero_iff] at hbs
@@ -1784,29 +1835,29 @@ theorem pushLeaf_pushLeaf_of_one_le_firstHeight (hbs : 1 ≤ s.firstHeight) :
     rw [pushLeaf_cons_leaf]
     exact height_le_firstHeight_push.trans_eq' rfl
 
-theorem IsSMH.pushLeaf IsSMH (hsh : IsSMH s) : (s.pushLeaf x) := hsh.push_of
+theorem IsSMH.pushLeaf (hsh : IsSMH s) : IsSMH (pushLeaf x s) := hsh.push_of
 
-theorem IsPerfect.pushLeaf IsPerfect (hs : IsPerfect s) : (s.pushLeaf x) :=
+theorem IsPerfect.pushLeaf (hs : IsPerfect s) : IsPerfect (s.pushLeaf x) :=
   hs.push_of_IsPerfect IsPerfect_leaf
 
 end PushLeaf
 
-def pushLeafs (s : BTStack α) (xs : List α) : BTStack α := xs.foldl pushLeaf s
+def pushLeafs (xs : List α) (s : BTStack α) : BTStack α := xs.foldl (flip pushLeaf) s
 
 section PushLeafs
 
 variable {x : α} {xs ys : List α}
 
-@[simp] theorem pushLeafs_nil_right :  s.pushLeafs [] = s := List.foldl_nil
+@[simp] theorem pushLeafs_nil : pushLeafs [] s = s := List.foldl_nil
 
-@[simp] theorem pushLeafs_cons_right : s.pushLeafs (x :: xs) = (s.pushLeaf x).pushLeafs xs :=
+@[simp] theorem pushLeafs_cons : s.pushLeafs (x :: xs) = (s.pushLeaf x).pushLeafs xs :=
     List.foldl_cons _ _
 
-@[simp] theorem pushLeafs_append_singleton_right : s.pushLeafs (xs ++ [x]) = (s.pushLeafs xs).pushLeaf x :=
-    List.foldl_append _ _ _ _
+@[simp] theorem pushLeafs_append_singleton :
+    pushLeafs (xs ++ [x]) s = (s.pushLeafs xs).pushLeaf x := List.foldl_append _ _ _ _
 
 theorem pushLeafs_singleton : s.pushLeafs [x] = s.pushLeaf x := by
-  simp only [pushLeafs_cons_right, pushLeafs_nil_right]
+  simp only [pushLeafs_cons, pushLeafs_nil]
 
 @[simp] theorem pushLeafs_append : s.pushLeafs (xs ++ ys) = (s.pushLeafs xs).pushLeafs ys :=
     List.foldl_append _ _ _ _
@@ -1815,67 +1866,61 @@ theorem pushLeafs_singleton : s.pushLeafs [x] = s.pushLeaf x := by
     IsSMH (s.pushLeafs xs) := by
   induction xs generalizing s with | nil => _ | cons x xs IH => _
   · exact hsh
-  · simp_rw [pushLeafs_cons_right]
+  · simp_rw [pushLeafs_cons]
     exact IH hsh.pushLeaf
 
 @[simp] theorem IsPerfect.pushLeafs (hsh : IsPerfect s) :
     IsPerfect (s.pushLeafs xs) := by
   induction xs generalizing s with | nil => _ | cons x xs IH => _
   · exact hsh
-  · simp_rw [pushLeafs_cons_right]
+  · simp_rw [pushLeafs_cons]
     exact IH hsh.pushLeaf
 
 theorem pushLeafs_eq_pushStack_ofList_reverse_map_leaf :
-    s.pushLeafs xs = s.pushStack (ofList (xs.reverse.map leaf)) := by
+    s.pushLeafs xs = pushStack (xs.reverse.map leaf) s := by
   induction xs generalizing s with | nil => _ | cons _ _ IH => _
   · rfl
-  · simp_rw [pushLeafs_cons_right, List.reverse_cons, List.map_append, List.map_singleton,
-      ofList_append, pushStack_append, ofList_singleton, pushStack_singleton,
-      push_leaf, IH]
+  · simp_rw [pushLeafs_cons, List.reverse_cons, List.map_append, List.map_singleton,
+      pushStack_append, pushStack_singleton, push_leaf, IH]
 
 end PushLeafs
 
-def ofLeafs (xs : List α) : BTStack α := nil.pushLeafs xs
+def ofLeafs (xs : List α) : BTStack α := pushLeafs xs []
 
 section OfLeafs
 
-theorem ofLeafs_nil : ofLeafs [] = (nil : BTStack α) :=
-  pushLeafs_nil_right
+@[simp]
+theorem ofLeafs_nil : ofLeafs [] = ([] : BTStack α) := pushLeafs_nil
 
-theorem ofLeafs_cons : ofLeafs (x :: xs) = (singleton (leaf x)).pushLeafs xs :=
-  pushLeafs_cons_right
+@[simp]
+theorem ofLeafs_cons : ofLeafs (x :: xs) = pushLeafs xs [leaf x] := pushLeafs_cons
+
+@[simp]
+theorem ofLeafs_append_singleton : ofLeafs (xs ++ [x]) = pushLeaf x (ofLeafs xs) :=
+  pushLeafs_append_singleton
 
 @[simp] theorem ofLeafs_IsSMH : IsSMH (ofLeafs xs) := IsSMH_nil.pushLeafs
 
 @[simp] theorem ofLeafs_IsPerfect : IsPerfect (ofLeafs xs) := IsPerfect_nil.pushLeafs
 
+theorem count_ofLeafs : (ofLeafs xs).count = xs.length := by
+  induction xs using List.reverseRecOn with | nil => _ | append_singleton xs x IH => _
+  · rfl
+  · simp_rw [ofLeafs_append_singleton]
+theorem toList_ofLeafs : (ofLeafs xs).toList = xs := by
+  induction xs using List.reverseRecOn with | nil => _ | append_singleton xs x IH => _
+  · rfl
+  · simp_rw [ofLeafs_append_singleton]
+    unfold pushLeafs
+    unfold pushLeaf
+
+theorem pushStack_ofLeafs : pushStack (ofLeafs xs) s = pushLeafs xs s := by
+  induction xs generalizing s with | nil => _ | cons x xs IH => _
+  · rfl
+  · simp_rw [ofLeafs_cons, pushLeafs_cons]
+    rw [← IH]
+    rw [← IH]
+    rw [← pushStack_append]
+
+
 end OfLeafs
-
-def ofListVals (bs : List α) : BTStack α :=
-  if hbs : 0 < bs.length then
-  (ofListVals (bs.drop (2^(bs.length.log2)))).append_singleton
-    ((BTree.ofList (bs.take (2^(bs.length.log2))) (List.ne_nil_of_length_pos
-    (List.length_take_pos.mpr ⟨hbs, Nat.two_pow_pos _⟩)))) else nil
-
-def pushLeaf (s : BTStack α) (a : α) : BTStack α := s.push (leaf a)
-
-def pushListVals (s : BTStack α) (bs : List α) : BTStack α := bs.foldl pushLeaf s
-
-theorem pushList_eq_push : s.pushListVals bs = s.pushStack (ofListVals bs) := sorry
-
-#eval ofListVals [0, 1, 2, 3, 4, 5, 6, 7]
-
-
-def pushTuple (s : BTStack α) (bs : Fin k → α) : BTStack α :=
-    Fin.foldl k (fun p i => p.pushLeaf (bs i)) s
-
-def ofTuple' (bs : Fin k → α) : BTStack α := pushTuple nil bs
-
-#eval Nat.bitIndices 7
-
-#eval List.foldr (fun (a : ℕ) (p : BTStack ℕ) => p.push (leaf a)) nil [6, 5, 4, 3, 2, 1, 0]
-
-#eval List.foldl (fun p a => p.push (leaf a)) nil [0, 1, 2, 3, 4, 5, 6]
-
-def sadsdasd (s : BTStack α) (bs : List α) : BTStack α :=
-    (bs.length.bitIndices).foldl (fun s n => _) s

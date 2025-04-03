@@ -95,9 +95,19 @@ theorem bit_modTwo_divTwo : bit s.modTwo s.divTwo = s := by
   · simp_rw [modTwo_singleton, divTwo_singleton, bit_some_nil]
   · simp_rw [modTwo_cons_cons, divTwo_cons_cons, bit_cons, IH]
 
-theorem divTwo_bit : (bit ao ss).divTwo = ss := sorry
+theorem divTwo_bit : (bit ao ss).divTwo = ss := by
+  induction ss with | nil => _ | cons a ss IH => _
+  · cases a0
+    · simp_rw [bit_none_nil, divTwo_nil]
+    · simp_rw [bit_some_nil, divTwo_singleton]
+  · simp_rw [bit_cons, divTwo_cons_cons, IH]
 
-theorem modTwo_bit : (bit ao ss).modTwo = ao := sorry
+theorem modTwo_bit : (bit ao ss).modTwo = ao := by
+  induction ss with | nil => _ | cons a ss IH => _
+  · cases a0
+    · simp_rw [bit_none_nil, modTwo_nil]
+    · simp_rw [bit_some_nil, modTwo_singleton]
+  · simp_rw [bit_cons, modTwo_cons_cons, IH]
 
 theorem length_take_of_length_eq_add (l : List α) (hl : l.length = n + m) :
   (l.take n).length = n := length_take_of_le (hl ▸ Nat.le_add_right _ _)
@@ -113,6 +123,10 @@ theorem ext_getElem_iff (s t : List α) : s = t ↔
   · exact List.ext_getElem h.1 h.2
 
 end List
+
+def PairRec (α : Type u) : ℕ → Type u where
+  | 0 => α
+  | (n + 1) => PairRec α n × PairRec α n
 
 inductive BTree (α : Type u) : Type u where
   | leaf : α → BTree α
@@ -1556,5 +1570,4 @@ theorem ofLeafs_eq_ofStack : ofLeafs xs = ofStack (xs.reverse.map leaf) := pushL
 /-
 @[simp] theorem ofLeafs_IsPerfect : IsPerfect (ofLeafs xs) := IsPerfect_nil.pushLeafs
 -/
-
 end OfLeafs

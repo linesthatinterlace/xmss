@@ -18,6 +18,8 @@ namespace List
 
 universe u
 
+variable {α : Type u}
+
 theorem ext_getElem_iff (s t : List α) : s = t ↔
     s.length = t.length ∧ (∀ i (hi₁ : i < s.length) (hi₁ : i < t.length), s[i] = t[i]) := by
   refine ⟨fun h => ?_, fun h => ?_⟩
@@ -26,7 +28,7 @@ theorem ext_getElem_iff (s t : List α) : s = t ↔
   · exact List.ext_getElem h.1 h.2
 
 @[elab_as_elim]
-def doubleRec {motive : List α → Sort u} (l : List α)  (nil : motive [])
+def doubleRec {α : Type*} {motive : List α → Sort u} (l : List α)  (nil : motive [])
     (singleton : ∀ a, motive [a])
     (cons_cons : ∀ a b l, motive l → motive (a :: b :: l)) : motive l :=
   match l with
@@ -50,6 +52,12 @@ theorem doubleRec_cons_cons {a b : α} {l : List α} :
 
 end DoubleRec
 
+theorem length_take_of_length_eq_add (l : List α) (hl : l.length = n + m) :
+  (l.take n).length = n := length_take_of_le (hl ▸ Nat.le_add_right _ _)
+
+theorem length_drop_of_length_eq_add (l : List α) (hl : l.length = n + m) :
+  (l.drop n).length = m := length_drop ▸ (hl ▸ add_tsub_cancel_left _ _)
+
 end List
 
 inductive BTree (α : Type u) : ℕ → Type u where
@@ -59,14 +67,24 @@ deriving Repr, DecidableEq
 
 namespace BTree
 
+
+variable {n m : ℕ}
+
+theorem leaf_inj_iff {a b : α} : leaf a = leaf b ↔ a = b := by simp only [leaf.injEq]
+
+theorem node_inj_iff {a b c d : BTree α n}: a.node b  = c.node d ↔ a = c ∧ b = d := by
+  simp only [node.injEq]
+
 def val (t : BTree α 0) : α := match t with | leaf a => a
+
+@[simp] theorem val_leaf {a : α} : (leaf a).val = a := rfl
 
 def left (t : BTree α (n + 1)) : BTree α n := match t with | node l _ => l
 
 def right (t : BTree α (n + 1)) : BTree α n := match t with | node _ r => r
 
-@[simp] theorem left_node {l r : BTree α n } : (node l r).left = l := rfl
-@[simp] theorem right_node {l r : BTree α n } : (node l r).right = r := rfl
+@[simp] theorem left_node {l r : BTree α n} : (node l r).left = l := rfl
+@[simp] theorem right_node {l r : BTree α n} : (node l r).right = r := rfl
 @[simp] theorem node_left_right {t : BTree α (n + 1)} : t.left.node t.right = t := by cases t ; rfl
 
 def BTreeEquivPair : BTree α (n + 1) ≃ BTree α n × BTree α n where
@@ -75,7 +93,135 @@ def BTreeEquivPair : BTree α (n + 1) ≃ BTree α n × BTree α n where
   left_inv := fun p => by simp_rw [node_left_right]
   right_inv := fun p => by simp_rw [left_node, right_node]
 
-variable {n : ℕ}
+@[ext]
+theorem ext_zero {a b : BTree α 0} (hab : a.val = b.val) : a = b := by
+  cases a ; cases b
+  simp_rw [leaf.injEq]
+  exact hab
+
+@[ext]
+theorem ext_succ {a b : BTree α (n + 1)} (hab₁ : a.left = b.left) (hab₂ : a.right = b.right) :
+    a = b := by
+  cases a ; cases b
+  simp_rw [node.injEq]
+  exact ⟨hab₁, hab₂⟩
+
+protected def cast {n m : ℕ} (h : n = m) : BTree α n → BTree α m
+  | leaf a => match m with | 0 => leaf a
+  | node l r => match m with
+  | _ + 1 => node (l.cast (Nat.add_right_cancel h)) (r.cast (Nat.add_right_cancel h))
+
+section Cast
+
+@[simp]
+theorem cast_rfl {t : BTree α n} : t.cast rfl = t := by
+  induction t with | leaf _ => _ | node _ _ IHL IHR => _
+  · rfl
+  · simp_rw [BTree.ext_succ_iff]
+    exact ⟨IHL, IHR⟩
+
+theorem cast_eq_cast {h : n = m} {t : BTree α n} : t.cast h = h ▸ t := by
+  cases h ; rw [cast_rfl]
+
+@[simp]
+theorem cast_cast {t : BTree α n} {h : n = m} {h' : m = n} : (t.cast h).cast h' = t := by
+  cases h ; cases h' ; simp_rw [cast_rfl]
+
+def castEquiv (h : n = m) : BTree α n ≃ BTree α m where
+  toFun := BTree.cast h
+  invFun := BTree.cast h.symm
+  left_inv _ := cast_cast
+  right_inv _ := cast_cast
+
+end Cast
+
+def toList {n : ℕ} : BTree α n → List α
+  | leaf a => [a]
+  | node l r => toList l ++ toList r
+
+section ToList
+
+variable {s t : BTree α n}
+
+@[simp] theorem toList_leaf : (leaf a).toList = [a] := rfl
+@[simp] theorem toList_node : (node l r).toList = l.toList ++ r.toList := rfl
+theorem toList_zero {a : BTree α 0} : a.toList = [a.val] := by cases a ; rfl
+theorem toList_succ {a : BTree α (n + 1)} :
+    a.toList = a.left.toList ++ a.right.toList := by cases a ; rfl
+
+theorem length_toList : (toList t).length = 2^n := by
+  induction t with | leaf _ => _ | node _ _ IHL IHR => _
+  · rfl
+  · simp_rw [toList_node, List.length_append, Nat.two_pow_succ, IHL, IHR]
+
+@[simp] theorem toList_ne_nil : toList t ≠ [] :=
+  List.ne_nil_of_length_pos (length_toList ▸ Nat.two_pow_pos _)
+
+theorem toList_ext_iff : s = t ↔ s.toList = t.toList := by
+  induction n with | zero => _ | succ n IH => _
+  · simp_rw [BTree.ext_zero_iff, toList_zero, List.cons_eq_cons, and_true]
+  · simp_rw [BTree.ext_succ_iff, toList_succ, IH]
+    refine ⟨fun h => h.1 ▸ h.2 ▸ rfl, ?_⟩
+    simp_rw [List.ext_getElem_iff, List.length_append, List.getElem_append,
+      length_toList, true_and]
+    refine fun H => ⟨fun i hi _ => ?_, fun i hi _  => ?_⟩
+    · specialize H i
+      simp_rw [Nat.lt_add_left _ hi, hi, dite_true, forall_true_left] at H
+      exact H
+    · specialize H (i + 2^n)
+      simp_rw [Nat.add_lt_add_right hi, (Nat.le_add_left _ _).not_lt,
+        dite_false, forall_true_left, add_tsub_cancel_right] at H
+      exact H
+
+@[simp]
+theorem toList_cast {h : n = m} {t : BTree α n} : (t.cast h).toList = t.toList := by
+  cases h ; rw [cast_rfl]
+
+@[simp]
+theorem toList_eq_rec {h : n = m} {t : BTree α n} : (h ▸ t).toList = t.toList := by
+  cases h ; rfl
+
+theorem eq_level_of_toList_eq_toList {s : BTree α n} {t : BTree α m}
+    (h : s.toList = t.toList) : n = m := by
+  have hs := length_toList (t := s)
+  have ht := length_toList (t := t)
+  rw [h] at hs
+  have hst := hs.symm.trans ht
+  simp_rw [Nat.pow_right_inj (refl 2)] at hst
+  exact hst
+
+theorem toList_eq_toList_iff {s : BTree α n} {t : BTree α m} :
+    s.toList = t.toList ↔ ∃ (h : n = m), s.cast h = t := by
+  refine ⟨fun h => ⟨eq_level_of_toList_eq_toList h, ?_⟩, fun ⟨h, hst⟩ => hst ▸ ?_⟩
+  · simp_rw [toList_ext_iff, toList_cast, h]
+  · simp_rw [toList_cast]
+
+theorem flatMap_map_leaf {s : List α} : (s.map leaf).flatMap toList = s := by
+  induction s with | nil => _ | cons a s IH => _
+  · rfl
+  · simp_rw [List.map_cons, List.flatMap_cons, toList_leaf, List.singleton_append, IH]
+
+end ToList
+
+def flatten {n : ℕ} : BTree (BTree α m) n → BTree α (m + n)
+  | leaf a => a
+  | node l r => node l.flatten r.flatten
+
+section Flatten
+
+variable {t l r : BTree (BTree α n) m} {a : BTree α n}
+
+@[simp] theorem flatten_leaf : (leaf a).flatten = a := rfl
+
+@[simp] theorem flatten_node : (node l r).flatten = node l.flatten r.flatten := rfl
+
+theorem toList_flatten : t.flatten.toList = t.toList.flatMap toList := by
+  induction t with | leaf _ => _ | node _ _ IHL IHR => _
+  · simp_rw [flatten_leaf, toList_leaf, List.flatMap_singleton]
+  · simp_rw [flatten_node, toList_node, List.flatMap_append, IHL, IHR]
+
+end Flatten
+
 
 def modTwo (l : List (BTree α n)) : Option (BTree α n) :=
   l.doubleRec none some (fun _ _ _ => id)
@@ -259,6 +405,16 @@ theorem drop_divTwo : (divTwo s).drop k = divTwo (s.drop (2*k)) := by
     mul_div_cancel_left₀ _ (two_ne_zero), lt_inf_iff,  true_and, List.getElem_drop,
     getElem_divTwo, implies_true, Nat.sub_mul_div', mul_add, add_assoc]
 
+theorem flatMap_toList_divTwo_of_modTwo_eq_none (hs : modTwo s = none) :
+    (divTwo s).flatMap toList = s.flatMap toList := by
+  induction s using List.doubleRec with
+  | nil => _ | singleton a => _ | cons_cons a b l IH => _
+  · rfl
+  · contradiction
+  · simp_rw [divTwo_cons_cons, List.flatMap_cons, toList_node, List.append_assoc,
+      List.append_cancel_left_eq, IH hs]
+
+
 end DivTwo
 
 def divModTwo (l : List (BTree α n)) : Option (BTree α n) × List (BTree α (n + 1)) :=
@@ -385,7 +541,116 @@ def bitDivModEquiv : Option (BTree α n) × List (BTree α (n + 1)) ≃ List (BT
 
 end BitDivTwoModTwoMulTwo
 
-abbrev SigmaBTree (α : Type u) := (n : ℕ) × BTree α n
+def listToTree : (n : ℕ) → (s : List α) → s.length = 2^n → BTree α n
+  | 0, s => fun h => leaf <| s.getLast (List.ne_nil_of_length_pos (h ▸ Nat.two_pow_pos _))
+  | (n + 1), s => fun h => node
+      (listToTree n (s.take (2^n)) (s.length_take_of_length_eq_add (h ▸ Nat.two_pow_succ _)))
+      (listToTree n (s.drop (2^n)) (s.length_drop_of_length_eq_add (h ▸ Nat.two_pow_succ _)))
+
+section ListToTree
+
+variable {s t : List α}
+
+@[simp]
+theorem toList_listToTree {hs : s.length = 2^n} : (listToTree n s hs).toList = s := by
+  induction n generalizing s with | zero => _ | succ n IH => _
+  · simp_rw [pow_zero, List.length_eq_one_iff] at hs
+    rcases hs with ⟨a, rfl⟩
+    simp_rw [listToTree, List.getLast_singleton, toList_zero, List.singleton_inj, val_leaf]
+  · rw [Nat.two_pow_succ] at hs
+    simp_rw [listToTree, toList_node, IH, List.take_append_drop]
+
+@[simp]
+theorem listToTree_singleton : listToTree 0 [a] rfl = leaf a := rfl
+
+theorem listToTree_zero {hs : s.length = 2^0} : listToTree 0 s hs =
+  leaf (s.getLast (List.ne_nil_of_length_pos (hs ▸ Nat.two_pow_pos _))) := rfl
+
+theorem listToTree_zero_eq_head {hs : s.length = 2^0} : listToTree 0 s hs =
+    leaf (s.head (List.ne_nil_of_length_pos (hs ▸ Nat.two_pow_pos _))) := by
+  simp_rw [pow_zero, List.length_eq_one_iff] at hs
+  rcases hs with ⟨a, rfl⟩
+  rfl
+
+@[simp]
+theorem listToTree_doubleton : listToTree 1 [a, b] rfl = node (leaf a) (leaf b) := rfl
+
+theorem listToTree_one {hs : s.length = 2^1} : listToTree 1 s hs =
+  node (leaf <| s.head (List.ne_nil_of_length_pos (hs ▸ Nat.two_pow_pos _)))
+    (leaf <| s.getLast (List.ne_nil_of_length_pos (hs ▸ Nat.two_pow_pos _))) := by
+  simp_rw [pow_one, List.length_eq_two] at hs
+  rcases hs with ⟨a, b, rfl⟩
+  rfl
+
+theorem listToTree_succ (hs : s.length = 2^(n + 1)) :
+  listToTree (n + 1) s hs = node
+    (listToTree n (s.take (2^n)) (s.length_take_of_length_eq_add (hs ▸ Nat.two_pow_succ _)))
+    (listToTree n (s.drop (2^n)) (s.length_drop_of_length_eq_add (hs ▸ Nat.two_pow_succ _))) := rfl
+
+theorem listToTree_append (hs : s.length = 2^n) (ht : t.length = 2^n)
+    (hst : (s ++ t).length = 2^(n + 1) := List.length_append.trans
+      (hs.symm ▸ ht.symm ▸ (Nat.two_pow_succ _).symm)) :
+    listToTree (n + 1) (s ++ t) hst = node (listToTree n s hs) (listToTree n t ht) := by
+  simp_rw [toList_ext_iff,  toList_node, toList_listToTree]
+
+end ListToTree
+
+def treeListToTree (n : ℕ) (s : List (BTree α m)) (hs : s.length = 2^n) : BTree α (m + n) :=
+  flatten (listToTree n s hs)
+
+section TreeListToTree
+
+variable {s : List (BTree α m)}
+
+@[simp]
+theorem toList_treeListToTree :
+    (treeListToTree n s hs).toList = s.flatMap toList :=
+  toList_flatten.trans (congrArg₂ _ rfl toList_listToTree)
+
+@[simp]
+theorem treeListToTree_singleton { a : BTree α n}: treeListToTree 0 [a] rfl = a := rfl
+
+theorem treeListToTree_zero {hs : s.length = 2^0} : treeListToTree 0 s hs =
+  s.getLast (List.ne_nil_of_length_pos (hs ▸ Nat.two_pow_pos _)) := rfl
+
+theorem treeListToTree_zero_eq_head {hs : s.length = 2^0} : treeListToTree 0 s hs =
+    s.head (List.ne_nil_of_length_pos (hs ▸ Nat.two_pow_pos _)) := by
+  simp_rw [pow_zero, List.length_eq_one_iff] at hs
+  rcases hs with ⟨a, rfl⟩
+  rfl
+
+@[simp]
+theorem treeListToTree_doubleton {a b : BTree α n} :
+    treeListToTree 1 [a, b] rfl = node a b := rfl
+
+theorem treeListToTree_one {hs : s.length = 2^1} : treeListToTree 1 s hs =
+  node (s.head (List.ne_nil_of_length_pos (hs ▸ Nat.two_pow_pos _)))
+    (s.getLast (List.ne_nil_of_length_pos (hs ▸ Nat.two_pow_pos _))) := by
+  simp_rw [pow_one, List.length_eq_two] at hs
+  rcases hs with ⟨a, b, rfl⟩
+  rfl
+
+theorem treeListToTree_succ (hs : s.length = 2^(n + 1)) :
+  treeListToTree (n + 1) s hs = node
+    (treeListToTree n (s.take (2^n)) (s.length_take_of_length_eq_add (hs ▸ Nat.two_pow_succ _)))
+    (treeListToTree n (s.drop (2^n)) (s.length_drop_of_length_eq_add (hs ▸ Nat.two_pow_succ _))) :=
+  rfl
+
+theorem treeListToTree_append (hs : s.length = 2^n) (ht : t.length = 2^n)
+    (hst : (s ++ t).length = 2^(n + 1) := List.length_append.trans
+      (hs.symm ▸ ht.symm ▸ (Nat.two_pow_succ _).symm)) :
+    treeListToTree (n + 1) (s ++ t) hst = (treeListToTree n s hs).node (treeListToTree n t ht) := by
+  simp_rw [toList_ext_iff, toList_node, toList_treeListToTree, List.flatMap_append]
+
+theorem treeListToTree_divTwo (hs : s.length = 2^(n + 1)) :
+  treeListToTree (n + 1) s hs = Nat.succ_add_eq_add_succ _ _ ▸
+    treeListToTree n (divTwo s) (length_divTwo ▸ hs ▸ by
+    simp_rw [pow_succ', mul_div_cancel_left₀ _ two_ne_zero]) := by
+  have H : modTwo s = none := by simp_rw [modTwo_eq_none_iff, hs, Nat.pow_succ', even_two_mul]
+  simp_rw [toList_ext_iff, toList_eq_rec, toList_treeListToTree,
+    flatMap_toList_divTwo_of_modTwo_eq_none H]
+
+end TreeListToTree
 
 @[elab_as_elim, specialize]
 def bitRec {motive : (n : ℕ) → List (BTree α n) → Sort u} {n : ℕ} (s : List (BTree α n))
@@ -420,68 +685,272 @@ variable {motive : (n : ℕ) → List (BTree α n) → Sort u}
 
 end BitRec
 
-def listToStack (n : ℕ) (s : List (BTree α n)) : List (SigmaBTree α) :=
+end BTree
+
+abbrev SBTree (α : Type u) := (n : ℕ) × BTree α n
+
+namespace SBTree
+
+open BTree
+
+def height (a : SBTree α) := a.1
+
+section Height
+
+variable {n : ℕ} {a : BTree α n}
+
+@[simp] theorem fst_eq_height {a : SBTree α} : a.1 = a.height := rfl
+
+@[simp] theorem height_mk : height ⟨n, a⟩ = n := rfl
+
+end Height
+
+variable {n : ℕ} {a : BTree α n}
+
+def toBTree (a : SBTree α) := a.2
+
+section ToBTree
+
+@[simp] theorem snd_eq_toBTree {a : SBTree α} : a.2 = a.toBTree := rfl
+
+@[simp] theorem toBTree_mk : toBTree ⟨n, a⟩ = a := rfl
+
+end ToBTree
+
+def toList (a : SBTree α) := a.toBTree.toList
+
+section ToList
+
+@[simp] theorem toList_mk : toList ⟨n, a⟩ = a.toList := rfl
+
+end ToList
+
+theorem eq_of_eq_of_toList_eq : ∀ {a b : SBTree α},
+    a.height = b.height → a.toList = b.toList → a = b
+  | ⟨n, a⟩, ⟨m, b⟩, hab, heq => by
+    simp_rw [height_mk] at hab
+    simp_rw [toList_mk, toList_eq_toList_iff, hab, exists_true_left] at heq
+    subst hab heq
+    simp_rw [cast_rfl]
+
+theorem eq_iff_eq_and_isList_eq {a b : SBTree α} :
+     a = b ↔ a.height = b.height ∧ a.toList = b.toList :=
+  ⟨fun h => h ▸ ⟨rfl, rfl⟩, fun h => eq_of_eq_of_toList_eq h.1 h.2⟩
+
+def leaf (a : α) : SBTree α := ⟨0, BTree.leaf a⟩
+
+section Leaf
+
+variable {a b : α}
+
+@[simp] theorem mk_leaf : ⟨0, BTree.leaf a⟩ = leaf a := rfl
+
+@[simp] theorem leaf_height : (leaf a).height = 0 := rfl
+@[simp] theorem leaf_toBTree : (leaf a).toBTree = BTree.leaf a := rfl
+@[simp] theorem leaf_toList : (leaf a).toList = [a] := rfl
+
+theorem leaf_inj_iff {a b : α} : leaf a = leaf b ↔ a = b := by
+  simp_rw [eq_iff_eq_and_isList_eq, leaf_height, leaf_toList, List.singleton_inj, true_and]
+
+end Leaf
+
+def node (a b : SBTree α) (hab : a.height = b.height) : SBTree α :=
+  ⟨b.height + 1, (a.toBTree.cast hab).node b.toBTree⟩
+
+section Node
+variable {a b c d: SBTree α} (hab : a.height = b.height) (hcd : c.height = d.height)
+
+@[simp] theorem node_mk {a : BTree α n} {b : BTree α m} (hab : n = m) :
+  node ⟨n, a⟩ ⟨m, b⟩ hab = ⟨m + 1, (a.cast hab).node b⟩ := rfl
+
+@[simp] theorem node_height : (a.node b hab).height = b.height + 1 := rfl
+theorem node_height' : (a.node b hab).height = a.height + 1 := hab ▸ rfl
+@[simp] theorem node_toBTree : (a.node b hab).toBTree = (a.toBTree.cast hab).node b.toBTree := rfl
+@[simp] theorem node_toList : (a.node b hab).toList = a.toList ++ b.toList :=
+  congrArg₂ _ toList_cast rfl
+
+theorem node_inj_iff : a.node b hab = c.node d hcd ↔ a = c ∧ b = d := by
+  cases a ; cases b ; cases c ; cases d
+  simp only [height_mk] at hab hcd ; subst hab hcd
+  simp_rw [eq_iff_eq_and_isList_eq, node_height, Nat.add_left_inj, node_toList, height_mk,
+    ← and_and_left, and_congr_right_iff, toList_mk]
+  intro hbd ; subst hbd
+  simp_rw [← toList_node, ← toList_ext_iff, BTree.node_inj_iff]
+
+end Node
+
+section LeafNode
+
+theorem forall_exists_leaf_or_node (t : SBTree α) :
+    (∃ (a : α), t = leaf a) ∨
+    (∃ (l r : SBTree α) (hlr : l.height = r.height), t = node l r hlr) := by
+  cases t with | mk n t => _
+  cases n with | zero => _ | succ n => _
+  · cases t with | leaf a => _
+    exact Or.inl ⟨a, rfl⟩
+  · cases t with | node l r => _
+    refine Or.inr ⟨⟨n, l⟩, ⟨n, r⟩, ?_⟩
+    simp_rw [node_mk, cast_rfl, height_mk, exists_const]
+
+end LeafNode
+
+def treeListToStack {n : ℕ} (s : List (BTree α n)) : List (SBTree α) :=
   bitRec s [] (fun a => [⟨_, a⟩]) (fun a _ _ _ r => a.elim r (⟨_, ·⟩ :: r))
 
-#eval listToStack 0 [leaf 0, leaf 1, leaf 2, leaf 3, leaf 4, leaf 5]
-
-section LiftToStack
+section TreeListToStack
 
 variable {a l r : BTree α n} {s : List (BTree α n)}
 
 @[simp]
-theorem listToStack_nil : listToStack n ([] : List (BTree α n)) = [] := by
-  rw [listToStack, bitRec]
+theorem treeListToStack_nil : treeListToStack ([] : List (BTree α n)) = [] := by
+  rw [treeListToStack, bitRec]
 
 @[simp]
-theorem listToStack_singleton  : listToStack n [a] = [⟨n, a⟩] := by
-  rw [listToStack, bitRec]
+theorem treeListToStack_singleton  : treeListToStack [a] = [⟨n, a⟩] := by
+  rw [treeListToStack, bitRec]
 
-theorem listToStack_cons_cons :
-    listToStack n (l :: r :: s) =
-    ((modTwo s).elim (·) (⟨n, ·⟩ :: ·)) (listToStack (n + 1) (l.node r :: divTwo s)) := by
-  rw [listToStack, bitRec_bith, eq_rec_constant]
+theorem treeListToStack_cons_cons :
+    treeListToStack (l :: r :: s) =
+    ((modTwo s).elim (·) (⟨n, ·⟩ :: ·)) (treeListToStack (l.node r :: divTwo s)) := by
+  rw [treeListToStack, bitRec_bith, eq_rec_constant]
   cases modTwo s <;> rfl
 
 @[simp]
-theorem listToStack_cons_cons_of_modTwo_none (hs : modTwo s = none) :
-    listToStack n (l :: r :: s) = listToStack (n + 1) (l.node r :: divTwo s) := by
-  simp_rw [listToStack_cons_cons, hs, Option.elim_none]
+theorem treeListToStack_cons_cons_of_modTwo_none (hs : modTwo s = none) :
+    treeListToStack (l :: r :: s) = treeListToStack (l.node r :: divTwo s) := by
+  simp_rw [treeListToStack_cons_cons, hs, Option.elim_none]
 
 @[simp]
-theorem listToStack_cons_cons_of_modTwo_some (hs : modTwo s = some a) :
-    listToStack n (l :: r :: s) = ⟨n, a⟩ :: listToStack (n + 1) (l.node r :: divTwo s) := by
-  simp_rw [listToStack_cons_cons, hs, Option.elim_some]
+theorem treeListToStack_cons_cons_of_modTwo_some (hs : modTwo s = some a) :
+    treeListToStack (l :: r :: s) = ⟨n, a⟩ :: treeListToStack (l.node r :: divTwo s) := by
+  simp_rw [treeListToStack_cons_cons, hs, Option.elim_some]
 
-theorem listToStack_of_modTwo_some (hs : modTwo s = some a) :
-    listToStack n s = ⟨n, a⟩ :: listToStack (n + 1) (divTwo s) := by
+theorem treeListToStack_of_modTwo_some (hs : modTwo s = some a) :
+    treeListToStack s = ⟨n, a⟩ :: treeListToStack (divTwo s) := by
   cases s using bitRec
   · contradiction
   · simp_rw [modTwo_singleton, Option.some_inj] at hs
     subst hs
-    simp_rw [listToStack_singleton, divTwo_singleton, listToStack_nil]
+    simp_rw [treeListToStack_singleton, divTwo_singleton, treeListToStack_nil]
   · simp_rw [modTwo_cons_cons] at hs
-    rw [divTwo_cons_cons, listToStack_cons_cons_of_modTwo_some hs]
+    rw [divTwo_cons_cons, treeListToStack_cons_cons_of_modTwo_some hs]
 
-theorem listToStack_of_modTwo_none (hs : modTwo s = none) :
-    listToStack n s = listToStack (n + 1) (divTwo s) := by
+theorem treeListToStack_of_modTwo_none (hs : modTwo s = none) :
+    treeListToStack s = treeListToStack (divTwo s) := by
   cases s using bitRec
-  · simp_rw [divTwo_nil, listToStack_nil]
+  · simp_rw [divTwo_nil, treeListToStack_nil]
   · contradiction
   · simp_rw [modTwo_cons_cons] at hs
-    simp_rw [divTwo_cons_cons, listToStack_cons_cons_of_modTwo_none hs]
+    simp_rw [divTwo_cons_cons, treeListToStack_cons_cons_of_modTwo_none hs]
 
-theorem listToStack_append_singleton_of_modTwo_none (hs : modTwo s = none) :
-    listToStack n (s ++ [a]) = ⟨n, a⟩ :: listToStack n s := by
-  rw [listToStack_of_modTwo_some
+theorem treeListToStack_append_singleton_of_modTwo_none (hs : modTwo s = none) :
+    treeListToStack (s ++ [a]) = ⟨n, a⟩ :: treeListToStack s := by
+  rw [treeListToStack_of_modTwo_some
     (modTwo_append_singleton_of_length_even (modTwo_eq_none_iff.mp hs)),
-    divTwo_append_singleton_of_modTwo_eq_none hs, listToStack_of_modTwo_none hs]
+    divTwo_append_singleton_of_modTwo_eq_none hs, treeListToStack_of_modTwo_none hs]
 
-theorem listToStack_append_singleton_of_modTwo_some (hs : modTwo s = some a) :
-    listToStack n (s ++ [b]) = listToStack (n + 1) (divTwo s ++ [node a b]) := by
-  rw [listToStack_of_modTwo_none (modTwo_append_singleton_of_length_odd
+theorem treeListToStack_append_singleton_of_modTwo_some (hs : modTwo s = some a) :
+    treeListToStack (s ++ [b]) = treeListToStack (divTwo s ++ [a.node b]) := by
+  rw [treeListToStack_of_modTwo_none (modTwo_append_singleton_of_length_odd
     (modTwo_eq_some_iff.mp hs).1), divTwo_append_singleton_of_modTwo_eq_some hs]
 
-end LiftToStack
+theorem treeListToStack_two_pow {s : List (BTree α m)} (hs : s.length = 2^n) :
+    treeListToStack s = [⟨m + n, treeListToTree n s hs⟩] := by
+  induction n generalizing m with | zero => _ | succ n IH => _
+  · simp_rw [pow_zero, List.length_eq_one_iff] at hs
+    rcases hs with ⟨_, rfl⟩
+    simp_rw [treeListToStack_singleton, treeListToTree_singleton, Nat.add_zero]
+  · have hs' : modTwo s = none := by simp_rw [modTwo_eq_none_iff, hs, pow_succ', even_two_mul]
+    have IH' := IH (s := divTwo s) (length_divTwo ▸ hs ▸ by
+        simp_rw [pow_succ', mul_div_cancel_left₀ _ two_ne_zero])
+    simp_rw [treeListToStack_of_modTwo_none hs', IH', List.singleton_inj,
+      treeListToTree_divTwo, eq_iff_eq_and_isList_eq, height_mk, Nat.succ_add_eq_add_succ,
+      toList_mk, toList_eq_rec, true_and]
 
-end BTree
+theorem treeListToStack_append {s t : List (BTree α m)} (hs : s.length = 2^n)
+    (ht : t.length = 2^n) :
+    treeListToStack (s ++ t) =
+    [⟨m + n + 1, (treeListToTree n s hs).node (treeListToTree n t ht)⟩] := by
+  have hst : (s ++ t).length = 2^(n + 1) :=
+    List.length_append.trans (hs.symm ▸ ht.symm ▸ (Nat.two_pow_succ _).symm)
+  simp_rw [treeListToStack_two_pow hst, treeListToTree_append hs ht, List.singleton_inj,
+    eq_iff_eq_and_isList_eq, height_mk, toList_mk, add_assoc, true_and]
+
+end TreeListToStack
+
+def listToStack (s : List α) : List (SBTree α) := treeListToStack (s.map BTree.leaf)
+
+section TreeListToStack
+
+variable {a b l r : α} {s : List α}
+
+@[simp]
+theorem listToStack_nil : listToStack ([] : List α) = [] := by
+  rw [listToStack, List.map_nil, treeListToStack_nil]
+
+@[simp]
+theorem listToStack_singleton : listToStack [a] = [leaf a] := by
+  rw [listToStack, List.map_singleton, treeListToStack_singleton, mk_leaf]
+
+theorem listToStack_cons_cons :
+    listToStack (l :: r :: s) = (modTwo (s.map BTree.leaf)).elim (·) (⟨0, ·⟩ :: ·)
+    (treeListToStack ((((BTree.leaf l).node (BTree.leaf r))) :: divTwo (s.map BTree.leaf))) := by
+  simp_rw [listToStack, List.map_cons, treeListToStack_cons_cons]
+
+@[simp]
+theorem listToStack_cons_cons_of_modTwo_none (hs : modTwo (s.map BTree.leaf) = none) :
+    listToStack (l :: r :: s) =
+    treeListToStack ((BTree.leaf l).node (BTree.leaf r) :: divTwo (s.map BTree.leaf)) := by
+  simp_rw [listToStack, List.map_cons, treeListToStack_cons_cons_of_modTwo_none hs]
+
+@[simp]
+theorem listToStack_cons_cons_of_modTwo_some
+    (hs : modTwo (s.map BTree.leaf) = some (BTree.leaf a)) :
+    listToStack (l :: r :: s) = leaf a ::
+    treeListToStack ((BTree.leaf l).node (BTree.leaf r) :: divTwo (s.map BTree.leaf)) := by
+  simp_rw [listToStack, List.map_cons, treeListToStack_cons_cons_of_modTwo_some hs, mk_leaf]
+
+theorem listToStack_of_modTwo_some (hs : modTwo (s.map BTree.leaf) = some (BTree.leaf a)) :
+    listToStack s = leaf a :: treeListToStack (divTwo (s.map BTree.leaf)) := by
+  rw [listToStack, treeListToStack_of_modTwo_some hs, mk_leaf]
+
+theorem listToStack_of_modTwo_none (hs : modTwo (s.map BTree.leaf) = none) :
+    listToStack s = treeListToStack (divTwo (s.map BTree.leaf)) := by
+  rw [listToStack, treeListToStack_of_modTwo_none hs]
+
+theorem listToStack_append_singleton_of_modTwo_none (hs : modTwo (s.map BTree.leaf) = none) :
+    listToStack (s ++ [a]) = leaf a :: treeListToStack (s.map BTree.leaf) := by
+  simp_rw [listToStack, List.map_append, List.map_singleton,
+    treeListToStack_append_singleton_of_modTwo_none hs, mk_leaf]
+
+theorem listToStack_append_singleton_of_modTwo_some
+    (hs : modTwo (s.map BTree.leaf) = some (BTree.leaf a)) : listToStack (s ++ [b]) =
+    treeListToStack (divTwo (s.map BTree.leaf) ++ [(BTree.leaf a).node (BTree.leaf b)]) := by
+  simp_rw [listToStack, List.map_append, List.map_singleton,
+    treeListToStack_append_singleton_of_modTwo_some hs]
+
+theorem listToStack_two_pow {s : List α} (hs : s.length = 2^n) :
+    listToStack s = [⟨n, listToTree n s hs⟩] := by
+  simp_rw [listToStack, treeListToStack_two_pow ((List.length_map _).trans hs),
+    List.singleton_inj, eq_iff_eq_and_isList_eq, height_mk, zero_add, true_and, toList_mk,
+    toList_treeListToTree, toList_listToTree, flatMap_map_leaf]
+
+theorem listToStack_append (s t : List α) (hs : s.length = 2^n) (ht : t.length = 2^n) :
+    listToStack (s ++ t) = [⟨n + 1, (listToTree n s hs).node (listToTree n t ht)⟩] := by
+  have hst : (s ++ t).length = 2^(n + 1) :=
+    List.length_append.trans (hs.symm ▸ ht.symm ▸ (Nat.two_pow_succ _).symm)
+  simp_rw [listToStack_two_pow hst, listToTree_append hs ht]
+
+end TreeListToStack
+
+def push (st : List (SBTree α)) (b : SBTree α) : List (SBTree α) := match st with
+  | [] => [b]
+  | a :: st => if hab : a.height = b.height then push st (a.node b hab) else b :: a :: st
+
+def sbTreeListToStack (ls : List (SBTree α)) : List (SBTree α) :=
+  ls.foldl push []
+
+#eval sbTreeListToStack [leaf 1, leaf 2, leaf 3, leaf 4]
+#eval treeListToStack [BTree.leaf 1, BTree.leaf 2, BTree.leaf 3, BTree.leaf 4]
+
+end SBTree

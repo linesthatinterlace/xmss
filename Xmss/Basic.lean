@@ -1288,10 +1288,14 @@ def listPushToStack (ls : List α) : SBTL α := btlPushToStack (ls.map BT.leaf)
 
 section ListPushToStack
 
-theorem listToStack_eq_listPushToStack : listToStack = listPushToStack (α := α) :=
+theorem listToStack_eq_listPushToStack : listPushToStack (α := α) = listToStack :=
     funext <| fun s => by
   unfold listToStack listPushToStack
   simp_rw [btlPushToStack_eq_btlToStack]
+
+theorem listPushToStack_two_pow {s : List α} (hs : s.length = 2^n) :
+    listPushToStack s = [ofBT <| listToBT n s hs] := by
+  simp_rw [listToStack_eq_listPushToStack, listToStack_two_pow hs]
 
 #eval (fun a => listPushToStack a == listToStack a) [1, 2, 3]
 #eval (fun a => listPushToStack a == listToStack a) [1, 2, 3, 4, 5, 6]

@@ -497,11 +497,13 @@ def bit :  Option (BT α n) → BTL α (n + 1) → BTL α n
 
 section Bit
 
-variable {ao : Option (BT α n)} {s : BTL α (n + 1)}
+variable {ao : Option (BT α n)} {s : BTL α (n + 1)} {b : BT α (n + 1)}
 
 @[simp] theorem bit_nil : bit ao ([] : BTL α (n + 1)) = ao.toList := rfl
 @[simp] theorem bit_none_nil : bit none ([] : BTL α (n + 1)) = [] := rfl
 @[simp] theorem bit_some_nil : bit (some a) ([] : BTL α (n + 1)) = [a] := rfl
+@[simp] theorem bit_none_singleton : bit none [b] = [b.left, b.right] := rfl
+@[simp] theorem bit_some_singleton : bit (some a) [b] = [b.left, b.right, a] := rfl
 @[simp] theorem bit_cons : bit ao (lr :: ss) = lr.left :: lr.right :: bit ao ss := rfl
 
 theorem bit_none_eq_flatMap :
@@ -509,8 +511,7 @@ theorem bit_none_eq_flatMap :
   induction s using List.doubleRec with
   | nil => _ | singleton a => _ | cons_cons a b l IH => _
   · rfl
-  · simp_rw [bit_cons, bit_nil, Option.toList_none, List.flatMap_cons, List.flatMap_nil,
-      List.append_nil]
+  · simp_rw [bit_none_singleton, List.flatMap_singleton]
   · simp_rw [bit_cons, IH, List.flatMap_cons, List.cons_append, List.nil_append]
 
 theorem bit_some_eq_bit_none_append : bit (some a) s = bit none s ++ [a] := by
@@ -526,6 +527,15 @@ theorem toList_bit :
   · simp_rw [bit_cons, bit_nil, BTL.toList_cons, BTL.toList_nil, List.append_nil,
       toList_succ, List.append_assoc]
   · simp_rw [bit_cons, BTL.toList_cons, IH, toList_succ, List.append_assoc]
+
+@[simp] theorem toList_bit_none :
+    (bit none s).toList = s.toList := by
+  rw [toList_bit, Option.toList_none, toList_nil, List.append_nil]
+
+@[simp] theorem toList_bit_some :
+    (bit (some a) s).toList = s.toList ++ a.toList := by
+  rw [toList_bit, Option.toList_some, toList_singleton]
+
 
 end Bit
 
@@ -753,7 +763,7 @@ variable {n : ℕ} {a : BT α n}
 
 end Height
 
-def toBT (a : SBT α) := a.2
+def toBT (a : SBT α) : BT α a.height := a.2
 
 section ToBT
 
@@ -763,6 +773,29 @@ section ToBT
 
 end ToBT
 
+def ofBT (a : BT α n) : SBT α := ⟨n, a⟩
+
+section OfBT
+
+variable {a l r : BT α n}
+
+@[simp] theorem height_ofBT : (ofBT a).height = n := rfl
+@[simp] theorem toBT_ofBT : (ofBT a).toBT = a := rfl
+
+end OfBT
+
+protected def copy {m : ℕ} (a : SBT α) (h : a.height = m) : SBT α := ofBT (a.toBT.cast h)
+
+section Copy
+
+variable {a : SBT α} {h : a.height = m}
+
+@[simp] theorem toBT_copy : (a.copy h).toBT = a.toBT.cast h := rfl
+@[simp] theorem ofBT_cast {h : n = m} {a : BT α n} :
+    ofBT (a.cast h) = (ofBT a).copy h := rfl
+
+end Copy
+
 def toList (a : SBT α) := a.toBT.toList
 
 section ToList
@@ -770,13 +803,15 @@ section ToList
 variable {a s t : SBT α}
 
 @[simp] theorem toList_toBT : a.toBT.toList = a.toList := rfl
+@[simp] theorem toList_ofBT {a : BT α m} : (ofBT a).toList = a.toList := rfl
+@[simp] theorem toList_copy (h : a.height = m) : (a.copy h).toList = a.toList := by
+  unfold toList
+  simp_rw [toBT_copy, toList_cast]
 
 @[simp] theorem toList_mk {a : BT α n}: toList ⟨n, a⟩ = a.toList := rfl
 
 @[simp] theorem toList_ne_nil : toList a ≠ [] :=
   List.ne_nil_of_length_pos (length_toList ▸ Nat.two_pow_pos _)
-
-end ToList
 
 theorem eq_of_eq_toList : ∀ {a b : SBT α}, a.toList = b.toList → a = b
   | ⟨n, a⟩, ⟨m, b⟩, hab => by
@@ -789,17 +824,7 @@ theorem eq_of_eq_toList : ∀ {a b : SBT α}, a.toList = b.toList → a = b
 theorem eq_iff_toList_eq {a b : SBT α} :
      a = b ↔ a.toList = b.toList := ⟨fun h => h ▸ rfl, eq_of_eq_toList⟩
 
-def ofBT (a : BT α n) : SBT α := ⟨n, a⟩
-
-section OfBT
-
-variable {a l r : BT α n}
-
-@[simp] theorem height_ofBT : (ofBT a).height = n := rfl
-@[simp] theorem toBT_ofBT : (ofBT a).toBT = a := rfl
-@[simp] theorem toList_ofBT : (ofBT a).toList = a.toList := rfl
-
-end OfBT
+end ToList
 
 def leaf (a : α) : SBT α := ⟨0, BT.leaf a⟩
 
@@ -1098,7 +1123,7 @@ end ListToStack
 def push {m : ℕ} (s : SBTL α) (b : BT α m) : SBTL α := match s with
   | [] => ([ofBT b])
   | (a :: s) =>
-    if hab : a.height = m then push s (BT.node (a.toBT.cast hab) b)
+    if hab : a.height = m then push s ((a.toBT.cast hab).node b)
     else ofBT b :: a :: s
 
 section Push
@@ -1106,10 +1131,51 @@ section Push
 variable {a c : SBT α} {s : SBTL α} {b : BT α m}
 
 @[simp] theorem push_nil : push [] b = [ofBT b] := rfl
-@[simp] theorem push_cons : push (a :: s) b =
-    if hab : a.height = m then push s (BT.node (a.toBT.cast hab) b) else ofBT b :: a :: s := rfl
+theorem push_cons : push (a :: s) b =
+    if hab : a.height = m then push s ((a.toBT.cast hab).node b) else ofBT b :: a :: s := rfl
 @[simp] theorem push_singleton : push [a] b =
     if hab : a.height = m then [node a (ofBT b) hab] else [ofBT b, a] := rfl
+
+@[simp] theorem push_cons_of_ne (hab : a.height ≠ m) :
+    push (a :: s) b = ofBT b :: a :: s := dif_neg hab
+@[simp] theorem push_cons_of_eq (hab : a.height = m) :
+    push (a :: s) b = push s ((a.toBT.cast hab).node b) := dif_pos hab
+
+@[simp] theorem push_ne_nil : push s b ≠ [] := by
+  induction s generalizing m with | nil => _ | cons a s IH => _
+  · exact List.cons_ne_nil _ _
+  · rw [push_cons]
+    split_ifs
+    · exact IH
+    · exact List.cons_ne_nil _ _
+
+theorem le_height_head_push : m ≤ ((push s b).head push_ne_nil).height := by
+  induction s generalizing m with | nil => _ | cons a s IH => _
+  · exact le_rfl
+  · simp_rw [push_cons]
+    split_ifs
+    · exact (Nat.le_succ _).trans IH
+    · exact le_rfl
+
+theorem lt_push_head_height_of_lt :
+    ∀ {n}, n < m → n < ((push s b).head push_ne_nil).height :=
+  fun h => h.trans_le le_height_head_push
+
+theorem ne_push_succ_head_height {b : BT α (m + 1)} :
+    ((push s b).head push_ne_nil).height ≠ m :=
+  (lt_push_head_height_of_lt (Nat.lt_succ_self _)).ne'
+
+theorem push_of_head_ne (hs : ∀ (hs : s ≠ []), (s.head hs).height ≠ m) :
+    push s b = ofBT b :: s := by
+  cases s
+  · exact push_nil
+  · specialize hs (List.cons_ne_nil _ _)
+    simp_rw [List.head_cons] at hs
+    simp_rw [push_cons_of_ne hs]
+
+theorem push_push_of_height_lt {b : BT α m} {c : BT α n} (h : n < m) :
+    (push s b).push c = ofBT c :: push s b :=
+  push_of_head_ne (fun _ => (lt_push_head_height_of_lt h).ne')
 
 @[simp]
 theorem toList_push : (push s b).toList = s.toList ++ b.toList := by
@@ -1118,6 +1184,14 @@ theorem toList_push : (push s b).toList = s.toList ++ b.toList := by
   · simp_rw [push_nil, toList_singleton, toList_nil, List.nil_append, toList_ofBT]
   · simp_rw [push_cons,  apply_dite, IH, BT.toList_node, toList_cast, toList_toBT,
       toList_cons, toList_ofBT, List.append_assoc, dite_eq_ite, ite_self]
+
+theorem push_left_push_right {b : BT α (m + 1)} (hs : ∀ (hs : s ≠ []), (s.head hs).height ≠ m) :
+    (s.push b.left).push b.right = s.push b := by
+  simp_rw [push_of_head_ne hs, push_cons_of_eq rfl, toBT_ofBT, cast_rfl, node_left_right]
+
+theorem push_push_left_push_right {a : BT α (m + 1)} {b : BT α (m + 1)} :
+    ((s.push a).push b.left).push b.right = (s.push a).push b :=
+  push_left_push_right (fun _ => ne_push_succ_head_height)
 
 end Push
 
@@ -1136,64 +1210,91 @@ variable {a b : BT α m} {s s' : BTL α m} {t : SBTL α} {as : SBT α}
     t.pushStack (s ++ [a]) = push (t.pushStack s) a := by
   simp_rw [pushStack_append, pushStack_singleton]
 
-theorem toList_pushStack :
+@[simp] theorem toList_pushStack :
     (t.pushStack s).toList = t.toList ++ s.toList := by
   induction s generalizing t with | nil => _ | cons a s IH => _
   · simp_rw [pushStack_nil, BTL.toList_nil, List.append_nil]
   · simp_rw [pushStack_cons, IH, toList_push, List.append_assoc, BTL.toList_cons]
 
+theorem pushStack_bit_none {s : BTL α (m + 1)} (ht : ∀ (ht : t ≠ []), (t.head ht).height ≠ m) :
+    t.pushStack (bit none s) = t.pushStack s := by
+  induction s using List.doubleRec generalizing t with
+  | nil => _ | singleton a => _ | cons_cons a b l IH => _
+  · rfl
+  · simp_rw [bit_none_singleton, pushStack_cons, pushStack_nil, push_left_push_right ht]
+  · simp_rw [bit_cons, pushStack_cons, push_left_push_right ht, push_push_left_push_right]
+    refine IH (fun _ => ne_push_succ_head_height)
+
+theorem pushStack_bit_none_singleton {a : SBT α} (ha : a.height ≠ m) {s : BTL α (m + 1)} :
+    pushStack (bit none s) [a] = pushStack s [a] := by
+  rw [pushStack_bit_none]
+  exact fun _ => ha
+
+theorem pushStack_bit_none_singleton_of_height_succ {a : SBT α} (ha : a.height = m + 1)
+    {s : BTL α (m + 1)} : pushStack (bit none s) [a] = pushStack s [a] :=
+  pushStack_bit_none_singleton (ha.trans_ne (Nat.succ_ne_self _))
+
 end PushStack
 
-#eval pushStack [BT.leaf 1, BT.leaf 2, BT.leaf 3, BT.leaf 4, BT.leaf 5, BT.leaf 6, BT.leaf 7] []
-#eval pushStack [BT.leaf 2, BT.leaf 3, BT.leaf 4, BT.leaf 5, BT.leaf 6, BT.leaf 7] [leaf 1]
-#eval pushStack [BT.leaf 3, BT.leaf 4, BT.leaf 5, BT.leaf 6, BT.leaf 7] [node (leaf 1) (leaf 2) rfl]
-#eval pushStack [BT.leaf 4, BT.leaf 5, BT.leaf 6, BT.leaf 7] [leaf 3, node (leaf 1) (leaf 2) rfl]
-#eval pushStack [BT.leaf 5, BT.leaf 6, BT.leaf 7] [node (node (leaf 1) (leaf 2) rfl) (node (leaf 3) (leaf 4) rfl) rfl]
+def btlPushToStack (s : BTL α m) : SBTL α := pushStack s []
 
-def btlToStack' (s : BTL α m) : SBTL α := pushStack s []
-
-section BTLToStack'
+section BTLPushToStack
 
 variable {a : BT α m} {s s' : BTL α m}
 
-@[simp] theorem btlToStack'_nil : btlToStack' ([] : BTL α m) = [] := rfl
-@[simp] theorem btlToStack'_cons : btlToStack' (a :: s) = pushStack s [ofBT a]:= by
-  unfold btlToStack'
+@[simp] theorem btlPushToStack_nil : btlPushToStack ([] : BTL α m) = [] := rfl
+@[simp] theorem btlPushToStack_cons : btlPushToStack (a :: s) = pushStack s [ofBT a]:= by
+  unfold btlPushToStack
   simp_rw [pushStack_cons, push_nil]
 
-@[simp] theorem btlToStack'_singleton : btlToStack' [a] = [ofBT a] := by simp_rw [btlToStack'_cons, pushStack_nil]
+@[simp] theorem btlPushToStack_singleton : btlPushToStack [a] = [ofBT a] := by simp_rw [btlPushToStack_cons, pushStack_nil]
 
-@[simp] theorem btlToStack'_append_singleton : btlToStack' (s ++ [a]) = push (btlToStack' s) a :=
+@[simp] theorem btlPushToStack_append_singleton : btlPushToStack (s ++ [a]) = push (btlPushToStack s) a :=
   pushStack_append_singleton
 
-@[simp] theorem btlToStack'_append : btlToStack' (s ++ s') = (btlToStack' s).pushStack s' :=by
-  unfold btlToStack'
+@[simp] theorem btlPushToStack_append : btlPushToStack (s ++ s') = (btlPushToStack s).pushStack s' :=by
+  unfold btlPushToStack
   simp_rw [pushStack_append]
 
-@[simp] theorem btlToStack'_eq_btlToStack :
-    btlToStack' (α := α) (m := m) = btlToStack := funext <| fun s => by
+@[simp] theorem btlPushToStack_eq_btlToStack :
+    btlPushToStack (α := α) (m := m) = btlToStack := funext <| fun s => by
   induction s using bitRec with | nil => _ | singleton a => _ | bith a l r s IH => _
-  · simp only [btlToStack'_nil, btlToStack_nil]
-  · simp only [btlToStack'_cons, pushStack_nil, btlToStack_singleton]
-  · simp only [btlToStack'_cons, ofBT_node] at IH
-    simp_rw [btlToStack'_cons, pushStack_cons, push_cons, height_ofBT, dite_true, toBT_ofBT,
+  · simp only [btlPushToStack_nil, btlToStack_nil]
+  · simp only [btlPushToStack_cons, pushStack_nil, btlToStack_singleton]
+  · simp only [btlPushToStack_cons, ofBT_node] at IH
+    simp_rw [btlPushToStack_cons, pushStack_cons, push_cons, height_ofBT, dite_true, toBT_ofBT,
       cast_rfl, push_nil, ofBT_node]
+    have H := pushStack_bit_none_singleton_of_height_succ (s := s)
+      (a := (ofBT l).node (ofBT r) rfl) rfl
     rcases a with _ | a
     · rw [btlToStack_cons_cons_of_modTwo_none modTwo_bit, divTwo_bit]
-      simp_rw [← IH]
-      sorry
+      simp_rw [← IH, H]
     · rw [btlToStack_cons_cons_of_modTwo_some modTwo_bit, divTwo_bit,
         bit_some_eq_bit_none_append, pushStack_append, pushStack_cons, pushStack_nil]
-      simp_rw [← IH]
-      sorry
+      simp_rw [← IH, H]
+      refine push_of_head_ne (fun _ => ?_)
+      cases s using List.reverseRecOn
+      · simp_rw [pushStack_nil]
+        exact Nat.succ_ne_self _
+      · simp_rw [pushStack_append_singleton]
+        exact ne_push_succ_head_height
 
-end BTLToStack'
+end BTLPushToStack
 
-def listToStack' (ls : List α) : SBTL α := btlToStack' (ls.map BT.leaf)
+def listPushToStack (ls : List α) : SBTL α := btlPushToStack (ls.map BT.leaf)
 
-theorem listToStack_eq_listToStack' : listToStack = listToStack' (α := α) := funext <| fun s => by
-  unfold listToStack listToStack'
-  simp_rw [btlToStack'_eq_btlToStack]
+section ListPushToStack
+
+theorem listToStack_eq_listPushToStack : listToStack = listPushToStack (α := α) :=
+    funext <| fun s => by
+  unfold listToStack listPushToStack
+  simp_rw [btlPushToStack_eq_btlToStack]
+
+#eval (fun a => listPushToStack a == listToStack a) [1, 2, 3]
+#eval (fun a => listPushToStack a == listToStack a) [1, 2, 3, 4, 5, 6]
+#eval (fun a => listPushToStack a == listToStack a) (List.range 10000)
+
+end ListPushToStack
 
 end SBTL
 

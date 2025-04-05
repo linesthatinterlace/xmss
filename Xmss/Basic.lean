@@ -938,7 +938,7 @@ theorem toList_map_leaf {s : List α} : BTL.toList (s.map BT.leaf) = s := by
 end ToList
 
 def btlToStack {n : ℕ} (s : BTL α n) : SBTL α :=
-  s.bitRec [] (fun a => [ofBT a]) (fun a _ _ _ r => a.elim r (ofBT · :: r))
+  s.bitRec [] ([ofBT ·]) (fun a _ _ _ => a.elim (·) (ofBT · :: ·))
 
 section BTLToStack
 
@@ -954,7 +954,7 @@ theorem btlToStack_singleton : btlToStack [a] = [ofBT a] := by
 
 theorem btlToStack_cons_cons :
     btlToStack (l :: r :: s) =
-    ((modTwo s).elim (·) (fun a r => (ofBT a :: r)) (btlToStack (l.node r :: divTwo s))) := by
+    ((modTwo s).elim (·) (ofBT · :: ·) (btlToStack (l.node r :: divTwo s))) := by
   rw [btlToStack, bitRec_bith, eq_rec_constant]
   cases modTwo s <;> rfl
 

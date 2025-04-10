@@ -2,6 +2,7 @@ import Mathlib.Algebra.Order.Ring.Canonical
 import Mathlib.Algebra.Order.Ring.Nat
 import Mathlib.Algebra.Order.Star.Basic
 import Mathlib.Logic.Equiv.List
+import Mathlib.Data.Fin.VecNotation
 
 set_option autoImplicit false
 
@@ -170,6 +171,26 @@ def castEquiv (h : n = m) : BT α n ≃ BT α m where
     ⇑(castEquiv (α := α) h).symm = BT.cast h.symm := rfl
 
 end Cast
+
+def toSubTree {n : ℕ} (t : BT α n) (i : ℕ) (hi : i ≤ n) (v : ℕ) (hv : v < 2^(n - i)) :
+    BT α i :=
+    match hi with
+  | .refl  => _
+
+
+def toSubTree {n : ℕ} (t : BT α n) (i : ℕ) (hi : i ≤ n) (v : ℕ) (hv : v < 2^i) : BT α (n - i) :=
+    match i with
+  | 0 => t
+  | (j + 1) => match n, t with
+    | _, leaf _ => (Nat.not_succ_le_zero _ hi).elim
+    | m + 1, node l r =>
+      (toSubTree (bif v.testBit j then r else l) j
+      (Nat.le_of_succ_le_succ hi) (v % 2^j)
+      (Nat.mod_lt _ (Nat.two_pow_pos _))).cast (Nat.succ_sub_succ _ _).symm
+
+
+#eval toSubTree (node (node (leaf 1) (leaf 2)) (node (leaf 3) (leaf 4))) 1 (by decide) 1 (by decide)
+
 
 instance getElem : GetElem (BT α n) ℕ α (fun _ i => i < 2^n) where
   getElem := n.recOn (fun a _ _ => a.val) (fun n get lr i hi =>
@@ -1388,14 +1409,23 @@ theorem pushStack_mulTwo {s : BTL α (m + 1)} (ht : ∀ {ht : t ≠ []}, (t.head
   · rfl
   · simp_rw [mulTwo_cons, pushStack_cons, push_left_push_right ht, IH height_head_push_succ_ne]
 
+theorem pushStack_mulTwo_append_singleton {s : BTL α (m + 1)}
+    (ht : ∀ {ht : t ≠ []}, (t.head ht).height ≠ m) :
+    t.pushStack (mulTwo s ++ [a]) = (t.pushStack s).push a := by
+  simp_rw [pushStack_append_singleton, pushStack_mulTwo ht]
+
 theorem pushStack_mulTwo_singleton {a : SBT α} (ha : a.height ≠ m) {s : BTL α (m + 1)} :
     pushStack (mulTwo s) [a] = pushStack s [a] := by
   rw [pushStack_mulTwo]
   exact ha
 
-theorem pushStack_mulTwo_singleton_of_height_succ {a : SBT α} (ha : a.height = m + 1)
-    {s : BTL α (m + 1)} : pushStack (mulTwo s) [a] = pushStack s [a] :=
-  pushStack_mulTwo_singleton (ha.trans_ne (Nat.succ_ne_self _))
+theorem pushStack_mulTwo_singleton_succ {a : BT α (m + 1)}
+    {s : BTL α (m + 1)} : pushStack (mulTwo s) [ofBT a] = pushStack s [ofBT a] :=
+  pushStack_mulTwo_singleton (height_ofBT.trans_ne (Nat.succ_ne_self _))
+
+theorem pushStack_mulTwo_singleton_node {a b : BT α m}
+    {s : BTL α (m + 1)} : pushStack (mulTwo s) [node a b] = pushStack s [node a b] :=
+  pushStack_mulTwo_singleton (height_ofBT.trans_ne (Nat.succ_ne_self _))
 
 end PushStack
 
@@ -1433,10 +1463,9 @@ theorem btlPushToStack_append_singleton : btlPushToStack (s ++ [a]) = push (btlP
 
 theorem succ_le_height_head_btlPushToStack {s : BTL α (m + 1)} {hs : btlPushToStack s.mulTwo ≠ []} :
     m + 1 ≤ (List.head (btlPushToStack s.mulTwo) hs).height := by
-  induction s with | nil => _ | cons a s IH => _
+  cases s with | nil => _ | cons a s => _
   · simp_rw [mulTwo_nil, btlPushToStack_nil, ne_eq, not_true] at hs
-  · simp_rw [mulTwo_cons, btlPushToStack_cons₂,
-      pushStack_mulTwo (t := [node a.left a.right]) (Nat.succ_ne_self m)]
+  · simp_rw [mulTwo_cons, btlPushToStack_cons₂, pushStack_mulTwo_singleton_node]
     exact le_height_head_pushStack (List.cons_ne_nil _ _) (le_refl (m + 1))
 
 theorem height_head_btlPushToStack_ne {s : BTL α (m + 1)} {hs : btlPushToStack s.mulTwo ≠ []} :

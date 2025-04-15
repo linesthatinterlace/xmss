@@ -3,10 +3,11 @@ import Mathlib.Algebra.Order.Ring.Nat
 import Mathlib.Algebra.Order.Star.Basic
 import Mathlib.Logic.Equiv.List
 import Mathlib.Data.Fin.VecNotation
+import Mathlib.Data.ENat.Basic
 
 set_option autoImplicit false
 
-variable {α : Type*}
+variable {α β : Type*}
 
 variable {n m k : ℕ}
 
@@ -96,36 +97,76 @@ section Val
 
 @[simp] theorem val_leaf {a : α} : (leaf a).val = a := rfl
 
+@[simp] theorem leaf_val {a : BT α 0} : leaf (a.val) = a := match a with | leaf _ => rfl
+
 end Val
+
+def zeroEquiv : BT α 0 ≃ α where
+  toFun := val
+  invFun := leaf
+  left_inv _ := leaf_val
+  right_inv _ := val_leaf
 
 def left (t : BT α (n + 1)) : BT α n := match t with | node l _ => l
 
-section Left
-
-@[simp] theorem left_node {l r : BT α n} : (node l r).left = l := rfl
-
-end Left
-
 def right (t : BT α (n + 1)) : BT α n := match t with | node _ r => r
-
-section Right
-
-@[simp] theorem right_node {l r : BT α n} : (node l r).right = r := rfl
-
-end Right
 
 section LeftRight
 
-@[simp] theorem node_left_right {t : BT α (n + 1)} : t.left.node t.right = t := by cases t ; rfl
+variable {l r : BT α n} {t : BT α (n + 1)}
+
+@[simp] theorem left_node : (node l r).left = l := rfl
+
+@[simp] theorem right_node  : (node l r).right = r := rfl
+
+@[simp] theorem node_left_right : t.left.node t.right = t := by cases t ; rfl
 
 end LeftRight
 
 @[simps!]
-def BTEquivPair : BT α (n + 1) ≃ BT α n × BT α n where
-  toFun := fun p => (p.left, p.right)
-  invFun := fun p => node p.1 p.2
-  left_inv := fun p => by simp_rw [node_left_right]
-  right_inv := fun p => by simp_rw [left_node, right_node]
+def nodeEquiv : BT α (n + 1) ≃ BT α n × BT α n where
+  toFun t := (t.left, t.right)
+  invFun p := node p.1 p.2
+  left_inv _ := by simp_rw [node_left_right]
+  right_inv _ := by simp_rw [left_node, right_node]
+
+def switch (t : BT α (n + 1)) (b : Bool) := bif b then t.right else t.left
+
+section Switch
+
+variable {l r : BT α n} {t : BT α (n + 1)} {f : Bool → BT α n}
+
+@[simp] theorem switch_true : t.switch true = t.right := rfl
+@[simp] theorem switch_false : t.switch false = t.left := rfl
+
+theorem node_switch : (node l r).switch = fun b => bif b then r else l :=
+    funext <| fun b => by cases b <;> rfl
+
+@[simp] theorem node_switch_true : (node l r).switch true = r := rfl
+@[simp] theorem node_switch_false : (node l r).switch false = l := rfl
+
+@[simp] theorem node_switch_false_true : (node (f false) (f true)).switch = f := by
+  simp_rw [node_switch, funext_iff, Bool.forall_bool, cond_false, cond_true, and_self]
+
+@[simp] theorem node_false_true : node (t.switch false) (t.switch true) = t := node_left_right
+
+end Switch
+
+@[simps!]
+def switchEquiv : BT α (n + 1) ≃ (Bool → BT α n) where
+  toFun t := t.switch
+  invFun p := node (p false) (p true)
+  left_inv _ := by simp_rw [node_false_true]
+  right_inv _ := funext <| fun _ => by simp_rw [node_switch_false_true]
+
+section SwitchEquiv
+
+theorem switchEquiv_trans_boolArrowEquivProd :
+    switchEquiv.trans (Equiv.boolArrowEquivProd (BT α n)) = nodeEquiv := Equiv.ext <| fun _ => by
+  simp_rw [Equiv.trans_apply, Equiv.boolArrowEquivProd_apply,
+    switchEquiv_apply, switch_false, switch_true, nodeEquiv_apply]
+
+end SwitchEquiv
 
 section Ext
 
@@ -148,16 +189,38 @@ protected def cast {n m : ℕ} (h : n = m) (t : BT α n) : BT α m := h ▸ t
 
 section Cast
 
-variable {a : α}
+variable {a : α} {t l r : BT α n} {s : BT α m} {h : n = m}
 
 @[simp]
-theorem cast_rfl {t : BT α n} : t.cast rfl = t := rfl
+theorem cast_rfl  : t.cast rfl = t := rfl
 
-theorem cast_eq_cast {h : n = m} {t : BT α n} : t.cast h = h ▸ t := rfl
+theorem cast_eq_cast : t.cast h = h ▸ t := rfl
+
+theorem cast_symm :
+    t.cast h = s ↔ t = s.cast h.symm := by cases h ; rfl
 
 @[simp]
-theorem cast_cast {t : BT α n} {h : n = m} {h' : m = n} : (t.cast h).cast h' = t := by
-  cases h ; cases h' ; rfl
+theorem cast_trans {h' : m = k} :
+    (t.cast h).cast h' = t.cast (h.trans h') := by cases h ; cases h' ; rfl
+
+theorem cast_cast {h' : m = n} : (t.cast h).cast h' = t := by
+  simp_rw [cast_trans, cast_rfl]
+
+@[simp]
+theorem cast_node : (node l r).cast (congrArg _ h) = node (l.cast h) (r.cast h) := by
+  cases h ; rfl
+
+@[simp]
+theorem cast_left {t : BT α (n + 1)} :
+    (t.cast (congrArg _ h)).left = t.left.cast h := by cases h ; rfl
+
+@[simp]
+theorem cast_right {t : BT α (n + 1)} :
+    (t.cast (congrArg _ h)).right = t.right.cast h := by cases h ; rfl
+
+@[simp]
+theorem cast_switch {t : BT α (n + 1)} {b : Bool} :
+    (t.cast (congrArg _ h)).switch b = (t.switch b).cast h := by cases h ; rfl
 
 @[simps! apply symm_apply]
 def castEquiv (h : n = m) : BT α n ≃ BT α m where
@@ -172,33 +235,55 @@ def castEquiv (h : n = m) : BT α n ≃ BT α m where
 
 end Cast
 
-def toSubTree {n : ℕ} (t : BT α n) (i : ℕ) (hi : i ≤ n) (v : ℕ) (hv : v < 2^(n - i)) :
-    BT α i :=
-    match hi with
-  | .refl  => _
 
+def toSubTree : {n : ℕ} → (t : BT α n) → (i : Fin (n + 1)) → (v : ℕ) → BT α i
+  | 0, leaf a, i, _ => i.lastCases (leaf a) finZeroElim
+  | n + 1, node l r, i, v =>
+    i.lastCases (node l r)
+      (fun i => toSubTree (bif v.testBit (n - i) then r else l) i v)
 
-def toSubTree {n : ℕ} (t : BT α n) (i : ℕ) (hi : i ≤ n) (v : ℕ) (hv : v < 2^i) : BT α (n - i) :=
-    match i with
-  | 0 => t
-  | (j + 1) => match n, t with
-    | _, leaf _ => (Nat.not_succ_le_zero _ hi).elim
-    | m + 1, node l r =>
-      (toSubTree (bif v.testBit j then r else l) j
-      (Nat.le_of_succ_le_succ hi) (v % 2^j)
-      (Nat.mod_lt _ (Nat.two_pow_pos _))).cast (Nat.succ_sub_succ _ _).symm
+section ToSubTree
 
+variable {a : α} {t l r : BT α n} {s : BT α (n + 1)} {v : ℕ}
 
-#eval toSubTree (node (node (leaf 1) (leaf 2)) (node (leaf 3) (leaf 4))) 1 (by decide) 1 (by decide)
+@[simp]
+theorem toSubTree_last : toSubTree t (Fin.last n) v = t := by
+  unfold toSubTree
+  cases t <;> exact Fin.lastCases_last
 
+theorem toSubTree_leaf {i : Fin 1} :
+    toSubTree (leaf a) i v = (leaf a).cast (Fin.val_eq_zero _).symm := by
+  cases i using Fin.lastCases with | last => _ | cast i => _
+  · exact Fin.lastCases_last
+  · exact i.elim0
 
-instance getElem : GetElem (BT α n) ℕ α (fun _ i => i < 2^n) where
-  getElem := n.recOn (fun a _ _ => a.val) (fun n get lr i hi =>
-    if hi' : i < 2^n then
-    get lr.left i hi' else
-    get lr.right (i - 2^n) <|
-    Nat.sub_lt_right_of_lt_add (le_of_not_lt hi')
-    (hi.trans_eq (Nat.two_pow_succ _)))
+theorem toSubTree_leaf_zero : toSubTree (leaf a) 0 v = leaf a := by
+  simp_rw [toSubTree_leaf, cast_rfl]
+
+theorem toSubTree_node_castSucc {i : Fin (n + 1)} :
+    toSubTree (node l r) i.castSucc v =
+    toSubTree (bif v.testBit (n - i) then r else l) i v := Fin.lastCases_castSucc _
+
+theorem toSubTree_node_zero :
+    toSubTree (node l r) 0 v =
+    toSubTree (bif v.testBit n then r else l) 0 v := by
+  simp_rw [← Fin.castSucc_zero, toSubTree_node_castSucc, Fin.val_zero, tsub_zero]
+
+theorem toSubTree_succ_castSucc {i : Fin (n + 1)} :
+    toSubTree s i.castSucc v =
+    toSubTree (s.switch (v.testBit (n - i))) i v := by
+  cases s
+  simp_rw [toSubTree_node_castSucc]
+  rfl
+
+theorem toSubTree_succ_zero :
+    toSubTree s 0 v =
+    toSubTree (s.switch (v.testBit n)) 0 v := by
+  cases s
+  simp_rw [toSubTree_node_zero]
+  rfl
+
+end ToSubTree
 
 def toList {n : ℕ} : BT α n → List α
   | leaf a => [a]
@@ -978,9 +1063,122 @@ theorem exists_leaf_or_node (t : SBT α) :
 
 end LeafNode
 
-abbrev SBTL (α : Type*) := List (SBT α)
+
+inductive SBTL (α : Type*) : ℕ∞ → Type _ where
+  | nil : SBTL α ⊤
+  | cons {n : ℕ} {en : ℕ∞} (a : SBT α) (s : SBTL α en) (ha : a.height = n)
+      (hn : n < en) : SBTL α n
+
+
+--abbrev SBTL (α : Type*) := List (SBT α)
 
 namespace SBTL
+
+variable {en em : ℕ∞}
+
+section Cons
+
+variable {a b : SBT α} {s : SBTL α en} {t : SBTL α em} {ha : a.height = n} {hb : b.height = n}
+    {hn : n < en} {hm : n < em}
+
+theorem cons_inj : cons a s ha hn = cons b t hb hm ↔ a = b ∧ (∃ (h : en = em), s = h ▸ t) := by
+  simp_rw [cons.injEq]
+  refine ⟨?_, ?_⟩
+  · rintro ⟨rfl, rfl, hst⟩
+    simp_rw [heq_eq_eq] at hst
+    simp_rw [exists_const, true_and, hst]
+  · rintro ⟨rfl, ⟨rfl, hst⟩⟩
+    simp_rw [hst, heq_eq_eq, and_self]
+
+end Cons
+
+def toSBTList {en : ℕ∞} : SBTL α en → List (SBT α)
+  | nil => []
+  | cons a s _ _ => a :: s.toSBTList
+
+section ToSBTList
+
+variable {a b : SBT α} {s : SBTL α en} {ha : a.height = n} {hn : n < en} {hm : n < em} {t : SBTL α em}
+
+@[simp] theorem toSBTList_nil : toSBTList (α := α) nil = [] := rfl
+@[simp] theorem toSBTList_cons : toSBTList (cons a s ha hn) = a :: s.toSBTList := rfl
+
+theorem le_height_of_mem_toSBTList : b ∈ s.toSBTList → en ≤ b.height := by
+  induction s with | nil => _ | cons a s ha hn IH => _
+  · simp_rw [toSBTList_nil, List.not_mem_nil, top_le_iff, ENat.coe_ne_top, imp_self]
+  · cases ha
+    simp_rw [toSBTList_cons, List.mem_cons, Nat.cast_le]
+    rintro (rfl| h)
+    · exact le_rfl
+    · exact Nat.cast_le.mp <| hn.le.trans (IH h)
+
+theorem sorted_toSBTList : s.toSBTList.Sorted (height · < height ·) := by
+  induction s with | nil => _ | cons a s ha hn IH => _
+  · exact List.sorted_nil
+  · cases ha
+    simp_rw [toSBTList_cons, List.sorted_cons]
+    exact ⟨fun _ hb => Nat.cast_lt.mp <| hn.trans_le (le_height_of_mem_toSBTList hb), IH⟩
+
+theorem eq_of_toSBTList_eq (hst : s.toSBTList = t.toSBTList) : en = em := by
+  cases t with | nil => _ | cons a t ha hn => _
+  · cases s
+    · exact rfl
+    · simp_rw [toSBTList_cons, toSBTList_nil] at hst
+      contradiction
+  · cases ha
+    cases s with | nil => _ | cons b s hb hn' => _
+    · simp_rw [toSBTList_cons, toSBTList_nil] at hst
+      contradiction
+    · cases hb
+      simp_rw [toSBTList_cons, List.cons.injEq] at hst
+      simp_rw [hst.1]
+
+theorem cast_eq_iff_eq_cast.{u} {α β : Type u} {a : α} {b : β} (h : α = β) :
+    cast h a = b ↔ a = cast h.symm b := by
+  cases h
+  simp_rw [cast_eq]
+
+theorem eq_cast_iff_cast_eq.{u} {α β : Type u} {a : α} {b : β} (h : β = α) :
+    a = cast h b ↔ cast h.symm a = b := by
+  cases h
+  simp_rw [cast_eq]
+
+theorem toSBTList_inj : s.toSBTList = t.toSBTList ↔ ∃ (h : en = em), s = h ▸ t := by
+  induction t generalizing en with | nil => _ | cons a t ha hn IH => _
+  · cases s
+    · exact iff_of_true rfl ⟨rfl, rfl⟩
+    · simp_rw [toSBTList_cons, toSBTList_nil, List.cons_ne_nil, ENat.coe_ne_top, IsEmpty.exists_iff]
+  · cases ha
+    cases s with | nil => _| cons b s hb hn' => _
+    · simp_rw [toSBTList_nil, toSBTList_cons, List.nil_eq, List.cons_ne_nil, ENat.top_ne_coe,
+        IsEmpty.exists_iff]
+    · cases hb
+      simp_rw [toSBTList_cons, List.cons.injEq, Nat.cast_inj, IH]
+      refine ⟨?_, ?_⟩
+      · rintro ⟨rfl, ⟨rfl, hst⟩⟩
+        simp_rw [cons_inj, exists_true_left, true_and, hst]
+      · rintro ⟨hba, hst⟩
+        cases a ; cases b ; cases hba
+        simp_rw [cons_inj] at hst
+        exact hst
+
+end ToSBTList
+
+
+instance : Membership (SBT α) (SBTL α en) where
+  mem l a := Mem a l
+
+section Mem
+variable {a b : SBT α} {en : ℕ∞} {s : SBTL α en} {hb : b.height < en}
+
+theorem not_mem_nil : ¬ a ∈ [] := nofun
+
+theorem mem_cons : a ∈ (cons b s hb) ↔ a = b ∨ a ∈ s := by
+  refine ⟨?_, ?_⟩
+  · rintro (_ | _)
+    cases h
+
+end Mem
 
 def toList (s : SBTL α) : List α := s.reverse.flatMap SBT.toList
 
